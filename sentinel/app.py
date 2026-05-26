@@ -1,4 +1,6 @@
 import base64
+import json
+import time
 from pathlib import Path
 
 import bcrypt
@@ -13,7 +15,8 @@ st.set_page_config(
 )
 
 # ── Auth helpers ───────────────────────────────────────────────────────────────
-_CFG_PATH = Path(__file__).parent / "auth" / "config.yaml"
+_CFG_PATH  = Path(__file__).parent / "auth" / "config.yaml"
+_SESS_PATH = Path(__file__).parent / "auth" / "sessions.json"
 
 
 @st.cache_data(ttl=60)
@@ -47,6 +50,18 @@ def _img_b64(name: str) -> str:
         return f"data:image/{ext};base64," + base64.b64encode(p.read_bytes()).decode()
     except Exception:
         return ""
+
+
+# ── Session ping (powers "Online Now" counter in admin) ────────────────────────
+def _ping_session(username: str) -> None:
+    if not username:
+        return
+    try:
+        data = json.loads(_SESS_PATH.read_text()) if _SESS_PATH.exists() else {}
+        data[username] = time.time()
+        _SESS_PATH.write_text(json.dumps(data))
+    except Exception:
+        pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -106,6 +121,25 @@ if not st.session_state.get("authenticated"):
             border-radius: 14px !important;
             padding: 1.6rem 1.8rem !important;
         }
+        /* Feature highlights */
+        .login-features {
+            background: rgba(0,212,255,0.04);
+            border: 1px solid rgba(0,212,255,0.12);
+            border-radius: 10px;
+            padding: 0.8rem 1rem;
+            margin-bottom: 1.4rem;
+        }
+        .feat-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.6rem;
+            padding: 0.28rem 0;
+            border-bottom: 1px solid rgba(0,212,255,0.05);
+        }
+        .feat-row:last-child { border-bottom: none; }
+        .feat-icon { font-size: 0.9rem; flex-shrink: 0; padding-top: 0.05rem; }
+        .feat-text { color: #5a8fa0; font-size: 0.76rem; line-height: 1.45; }
+        .feat-text strong { color: #00d4ff; font-weight: 700; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -117,6 +151,30 @@ if not st.session_state.get("authenticated"):
         <div class="login-title">SENTINEL</div>
         <div class="login-sub">Security Operations · Restricted Access</div>
         <div class="login-line"></div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="login-features">
+            <div class="feat-row">
+                <span class="feat-icon">⚡</span>
+                <span class="feat-text"><strong>Free cyber tools</strong> — hash generator, base64 encoder, password analyzer &amp; generator, IP lookup, Caesar cipher</span>
+            </div>
+            <div class="feat-row">
+                <span class="feat-icon">🔍</span>
+                <span class="feat-text"><strong>Log analysis engine</strong> — upload any log file to detect SSH brute force, SQL injection, XSS, and directory scans</span>
+            </div>
+            <div class="feat-row">
+                <span class="feat-icon">🌍</span>
+                <span class="feat-text"><strong>Attack origin mapping</strong> — geolocate attacker IPs on a live world map with severity scoring</span>
+            </div>
+            <div class="feat-row">
+                <span class="feat-icon">🛡</span>
+                <span class="feat-text"><strong>SOC-grade threat detection</strong> — incident reports with severity levels, timelines, and downloadable HTML reports</span>
+            </div>
+        </div>
         """,
         unsafe_allow_html=True,
     )
@@ -200,6 +258,7 @@ if not st.session_state.get("authenticated"):
 _photo = _img_b64("jeremiah.png")
 _role  = st.session_state.get("role", "viewer")
 _uname = st.session_state.get("display_name", "")
+_ping_session(st.session_state.get("username", ""))
 
 with st.sidebar:
     st.markdown(
