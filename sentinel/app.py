@@ -1,3 +1,5 @@
+import base64
+from pathlib import Path
 import streamlit as st
 
 st.set_page_config(
@@ -6,6 +8,16 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+def _img_b64(name: str) -> str:
+    p = Path(__file__).parent / "assets" / name
+    try:
+        ext = p.suffix.lstrip(".")
+        return f"data:image/{ext};base64," + base64.b64encode(p.read_bytes()).decode()
+    except Exception:
+        return ""
+
+_photo = _img_b64("jeremiah.png")
 
 with st.sidebar:
     st.markdown(
@@ -18,6 +30,37 @@ with st.sidebar:
         """,
         unsafe_allow_html=True,
     )
+    st.divider()
+    if _photo:
+        st.markdown(
+            f"""
+            <div style="text-align:center;padding:0.5rem 0 0.2rem;">
+                <img src="{_photo}"
+                     style="width:110px;height:110px;border-radius:50%;
+                            object-fit:cover;object-position:center top;
+                            border:2px solid #444444;
+                            box-shadow:0 0 14px rgba(255,255,255,0.08);">
+            </div>
+            <div style="text-align:center;padding:0.75rem 0.5rem 0.25rem;color:#ffffff;">
+                <div style="font-size:0.95rem;font-weight:700;letter-spacing:0.04em;">
+                    Jeremiah Harden
+                </div>
+                <div style="font-size:0.72rem;color:#888888;margin-top:0.2rem;letter-spacing:0.06em;text-transform:uppercase;">
+                    Cybersecurity · Kennesaw State University
+                </div>
+            </div>
+            <div style="font-size:0.78rem;color:#aaaaaa;line-height:1.6;
+                        padding:0.6rem 0.75rem 0.5rem;text-align:center;
+                        border-top:1px solid #222222;border-bottom:1px solid #222222;
+                        margin:0.4rem 0 0.6rem;">
+                I build security tools to apply what I study in the real world.
+                Sentinel parses raw logs, detects active threats, and maps
+                attack origins — the same workflow a SOC analyst runs every day.
+                This isn't just a project. It's how I practice defense.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     st.divider()
 
 pg = st.navigation(
