@@ -66,9 +66,9 @@ def _ping_session(username: str) -> None:
         pass
 
 
-def _new_captcha(prefix: str = "") -> None:
-    st.session_state[f"{prefix}captcha_a"] = random.randint(2, 15)
-    st.session_state[f"{prefix}captcha_b"] = random.randint(2, 15)
+def _new_captcha(prefix: str = "captcha_") -> None:
+    st.session_state[f"{prefix}a"] = random.randint(2, 15)
+    st.session_state[f"{prefix}b"] = random.randint(2, 15)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -202,7 +202,7 @@ if not st.session_state.get("authenticated"):
 
     # Initialize per-form CAPTCHA challenges
     if "captcha_a" not in st.session_state:
-        _new_captcha("")
+        _new_captcha("captcha_")
     if "captcha_reg_a" not in st.session_state:
         _new_captcha("captcha_reg_")
 
@@ -234,7 +234,7 @@ if not st.session_state.get("authenticated"):
                 cap_ok = False
 
             if not cap_ok:
-                _new_captcha("")
+                _new_captcha("captcha_")
                 st.error("Human verification failed — a new equation has been generated, try again.")
             elif _check_password(username_input, password_input, config):
                 info = _user_info(username_input, config)
@@ -244,7 +244,7 @@ if not st.session_state.get("authenticated"):
                 st.session_state["role"]          = info.get("role", "viewer")
                 st.rerun()
             else:
-                _new_captcha("")
+                _new_captcha("captcha_")
                 st.error("Incorrect username or password — check caps lock and try again.")
 
     # ── Create Account ────────────────────────────────────────────────────────
