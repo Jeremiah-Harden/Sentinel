@@ -33,6 +33,12 @@ def _user_info(username: str, config: dict) -> dict:
     return config["credentials"]["usernames"].get(username.lower(), {})
 
 
+def _save_config(config: dict) -> None:
+    with open(_CFG_PATH, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
+    st.cache_data.clear()
+
+
 # ── Image helper ───────────────────────────────────────────────────────────────
 def _img_b64(name: str) -> str:
     p = Path(__file__).parent / "assets" / name
@@ -55,7 +61,7 @@ if not st.session_state.get("authenticated"):
         section[data-testid="stSidebar"]   { display: none !important; }
         [data-testid="collapsedControl"]   { display: none !important; }
         .main .block-container {
-            max-width: 420px !important;
+            max-width: 460px !important;
             padding: 5rem 1.5rem 2rem !important;
             margin: 0 auto !important;
         }
@@ -116,23 +122,69 @@ if not st.session_state.get("authenticated"):
     )
 
     config = _load_config()
-    login_error = st.session_state.pop("login_error", None)
 
-    with st.form("login_form", clear_on_submit=False):
-        username_input = st.text_input("Username", placeholder="Enter your username")
-        password_input = st.text_input("Password", type="password", placeholder="Enter your password")
-        submitted = st.form_submit_button("Log In", use_container_width=True, type="primary")
+    tab_login, tab_register = st.tabs(["Log In", "Create Account"])
 
-    if submitted:
-        if _check_password(username_input, password_input, config):
-            info = _user_info(username_input, config)
-            st.session_state["authenticated"]  = True
-            st.session_state["username"]       = username_input.lower()
-            st.session_state["display_name"]   = info.get("name", username_input)
-            st.session_state["role"]           = info.get("role", "viewer")
-            st.rerun()
-        else:
-            st.error("Incorrect username or password — check caps lock and try again.")
+    # ── Log In ────────────────────────────────────────────────────────────────
+    with tab_login:
+        with st.form("login_form", clear_on_submit=False):
+            username_input = st.text_input("Username", placeholder="Enter your username")
+            password_input = st.text_input("Password", type="password", placeholder="Enter your password")
+            submitted = st.form_submit_button("Log In", use_container_width=True, type="primary")
+
+        if submitted:
+            if _check_password(username_input, password_input, config):
+                info = _user_info(username_input, config)
+                st.session_state["authenticated"] = True
+                st.session_state["username"]      = username_input.strip().lower()
+                st.session_state["display_name"]  = info.get("name", username_input)
+                st.session_state["role"]          = info.get("role", "viewer")
+                st.rerun()
+            else:
+                st.error("Incorrect username or password — check caps lock and try again.")
+
+    # ── Create Account ────────────────────────────────────────────────────────
+    with tab_register:
+        with st.form("register_form", clear_on_submit=True):
+            reg_display  = st.text_input("Full Name", placeholder="Your name")
+            reg_username = st.text_input("Username", placeholder="lowercase, no spaces")
+            reg_email    = st.text_input("Email (optional)", placeholder="you@example.com")
+            reg_pw       = st.text_input("Password", type="password", placeholder="At least 8 characters")
+            reg_pw2      = st.text_input("Confirm Password", type="password", placeholder="Repeat your password")
+            reg_btn      = st.form_submit_button("Create Account", use_container_width=True, type="primary")
+
+        if reg_btn:
+            un  = reg_username.strip().lower()
+            err = None
+            if not reg_display.strip():
+                err = "Full name is required."
+            elif not un:
+                err = "Username is required."
+            elif not un.replace("_", "").replace("-", "").isalnum():
+                err = "Username can only contain letters, numbers, hyphens, and underscores."
+            elif un in config["credentials"]["usernames"]:
+                err = f"Username '{un}' is already taken — choose another."
+            elif len(reg_pw) < 8:
+                err = "Password must be at least 8 characters."
+            elif reg_pw != reg_pw2:
+                err = "Passwords do not match."
+
+            if err:
+                st.error(err)
+            else:
+                pw_hash = bcrypt.hashpw(reg_pw.encode(), bcrypt.gensalt(12)).decode()
+                config["credentials"]["usernames"][un] = {
+                    "name":     reg_display.strip(),
+                    "email":    reg_email.strip(),
+                    "password": pw_hash,
+                    "role":     "viewer",
+                }
+                _save_config(config)
+                st.session_state["authenticated"] = True
+                st.session_state["username"]      = un
+                st.session_state["display_name"]  = reg_display.strip()
+                st.session_state["role"]          = "viewer"
+                st.rerun()
 
     st.markdown(
         '<div class="login-footer">Sentinel v1.0 · Jeremiah Harden · Kennesaw State University</div>',
