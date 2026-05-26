@@ -76,6 +76,60 @@ st.markdown(
         letter-spacing: 0.04em;
     }
     .block-container { padding-top: 2rem !important; }
+
+    /* ── About / educational section ── */
+    .about-wrap {
+        background: rgba(0,15,30,0.75);
+        border: 1px solid rgba(0,212,255,0.1);
+        border-radius: 12px;
+        padding: 1.3rem 1.6rem 1.4rem;
+        margin-top: 0.4rem;
+    }
+    .about-h {
+        color: #00d4ff;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        border-bottom: 1px solid rgba(0,212,255,0.12);
+        padding-bottom: 0.3rem;
+        margin-bottom: 0.55rem;
+        margin-top: 1.1rem;
+    }
+    .about-h:first-child { margin-top: 0; }
+    .about-p {
+        color: #8ab0c4;
+        font-size: 0.86rem;
+        line-height: 1.72;
+        margin: 0;
+    }
+    .about-ex {
+        background: rgba(0,0,0,0.45);
+        border-left: 3px solid #00d4ff;
+        border-radius: 0 8px 8px 0;
+        padding: 0.55rem 1rem;
+        font-family: monospace;
+        font-size: 0.83rem;
+        color: #55ddf0;
+        margin: 0.35rem 0;
+        line-height: 1.65;
+        word-break: break-all;
+    }
+    .about-li {
+        color: #8ab0c4;
+        font-size: 0.86rem;
+        line-height: 1.65;
+        padding: 0.18rem 0;
+        padding-left: 1rem;
+        position: relative;
+    }
+    .about-li::before {
+        content: "›";
+        color: #00d4ff;
+        position: absolute;
+        left: 0;
+        font-weight: 700;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -118,6 +172,37 @@ with tab1:
     else:
         st.info("Enter text above to generate hashes.")
 
+    with st.expander("📚 About this tool — examples, student uses, and why companies rely on it"):
+        st.markdown(
+            """
+            <div class="about-wrap">
+                <div class="about-h">What cybersecurity students can do with it</div>
+                <div class="about-li">CTF competitions frequently hand you a hash and ask you to identify the algorithm or crack a weak one using wordlists with tools like Hashcat or John the Ripper — this tool lets you practice generating and recognizing each format.</div>
+                <div class="about-li">Verify that a downloaded file has not been tampered with by computing its hash and comparing it to the vendor's published checksum.</div>
+                <div class="about-li">Understand how databases store passwords — they hash them and never keep plaintext, so a breach leaks hashes, not passwords directly.</div>
+                <div class="about-li">Practice distinguishing hash types by output length: MD5 = 32 hex characters, SHA-1 = 40, SHA-256 = 64, SHA-512 = 128.</div>
+
+                <div class="about-h">Example</div>
+                <div class="about-ex">
+                    Input: "password123"<br>
+                    MD5:      482c811da5d5b4bc6d497ffa98491e38<br>
+                    SHA-256:  ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f<br><br>
+                    Change one character — "Password123" — and every hash changes completely (avalanche effect).
+                </div>
+
+                <div class="about-h">How it works</div>
+                <div class="about-p">A hash function is a one-way mathematical function that converts any input into a fixed-length fingerprint called a digest. The same input always produces the same digest, but even a single character change flips roughly half the output bits. You cannot reverse a hash back to the original input without trying every possible input. MD5 and SHA-1 are now considered broken for security use because collisions have been found. SHA-256 and SHA-512 are the current standards.</div>
+
+                <div class="about-h">Why companies use it</div>
+                <div class="about-li">Password storage: every modern authentication system hashes passwords before saving them so a data breach never exposes plaintext credentials.</div>
+                <div class="about-li">Software distribution: vendors publish SHA-256 checksums alongside installers so users can verify nothing was modified in transit.</div>
+                <div class="about-li">Digital signatures and TLS certificates rely on SHA-256 to bind a public key to an identity.</div>
+                <div class="about-li">Blockchain: every Bitcoin block references the hash of the previous block, making the chain tamper-evident without a central authority.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
 # ── Base64 ────────────────────────────────────────────────────────────────────
 with tab2:
     st.markdown("#### Base64 Encoder / Decoder")
@@ -145,6 +230,37 @@ with tab2:
             st.error(f"Error: {exc}")
     else:
         st.info("Enter text above to encode or decode.")
+
+    with st.expander("📚 About this tool — examples, student uses, and why companies rely on it"):
+        st.markdown(
+            """
+            <div class="about-wrap">
+                <div class="about-h">What cybersecurity students can do with it</div>
+                <div class="about-li">Attackers routinely base64-encode malware commands to bypass text-based security filters and IDS signatures. Decoding these strings is one of the first steps in malware analysis.</div>
+                <div class="about-li">Every JWT (JSON Web Token) is three Base64url segments separated by dots. Decode the first two to read the algorithm and the claims without needing any key.</div>
+                <div class="about-li">CTF challenges frequently hide flags inside base64 strings buried in HTML source, HTTP headers, or binary blobs.</div>
+                <div class="about-li">Email forensics: attachments in MIME messages are base64-encoded and must be decoded before you can inspect or scan them.</div>
+
+                <div class="about-h">Example</div>
+                <div class="about-ex">
+                    HTTP Basic Auth header value: "YWRtaW46cGFzc3dvcmQ="<br>
+                    Decoded → "admin:password"<br><br>
+                    Suspicious PowerShell one-liner: powershell -enc UwB0AGEAcgB0AC0AUAByAG8AYwBlAHMAcwA=<br>
+                    Decoded → "Start-Process" (classic living-off-the-land technique)
+                </div>
+
+                <div class="about-h">How it works</div>
+                <div class="about-p">Base64 groups every 3 bytes of binary data into a 24-bit block and splits it into four 6-bit values, each mapped to one of 64 printable ASCII characters (A-Z, a-z, 0-9, + and /). The = padding at the end realigns output when the input length is not a multiple of 3. Base64 is NOT encryption — it has no key and anyone can reverse it in milliseconds. Its only purpose is to safely carry binary data through systems that only accept printable text.</div>
+
+                <div class="about-h">Why companies use it</div>
+                <div class="about-li">Email and MIME: every file attachment you send is base64-encoded so binary data can travel over text-only mail protocols without corruption.</div>
+                <div class="about-li">JWT tokens: the header and payload of every access token in OAuth 2.0 and OpenID Connect are base64url-encoded.</div>
+                <div class="about-li">REST APIs: embedding images or binary blobs directly inside JSON responses avoids a separate file request.</div>
+                <div class="about-li">Web assets: data URIs in HTML and CSS embed images inline without an extra HTTP round-trip, which is how this app serves the background photo.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 # ── Password Strength ─────────────────────────────────────────────────────────
 with tab3:
@@ -240,6 +356,37 @@ with tab3:
         st.code(st.session_state["gen_pw"], language=None)
         st.caption("Copy the password above into the input field to run the strength check on it.")
 
+    with st.expander("📚 About this tool — examples, student uses, and why companies rely on it"):
+        st.markdown(
+            """
+            <div class="about-wrap">
+                <div class="about-h">What cybersecurity students can do with it</div>
+                <div class="about-li">Build a password auditing script that reads a list of credentials from a breach dump and scores each one — a real task in penetration testing engagements.</div>
+                <div class="about-li">Study NIST SP 800-63B, the US government's password guidelines. It actually recommends against forced complexity rules and instead emphasizes length and checking against known-breached passwords.</div>
+                <div class="about-li">Understand entropy — a 16-character password using all four character sets has over 100 bits of entropy, making brute-force infeasible even with a GPU cluster.</div>
+                <div class="about-li">Use the generator to create secure credentials for lab environments, CTF accounts, and any shared service where you need a one-time strong password.</div>
+
+                <div class="about-h">Example</div>
+                <div class="about-ex">
+                    "Summer2024!"  →  Fair (has length and symbols but uses a common pattern)<br>
+                    "kR#9mP@xW2!qN5vL"  →  Very Strong (all criteria met, 16 chars, fully random)<br><br>
+                    At 10 billion guesses per second, cracking "Summer2024!" could take hours.<br>
+                    Cracking "kR#9mP@xW2!qN5vL" would take longer than the age of the universe.
+                </div>
+
+                <div class="about-h">How it works</div>
+                <div class="about-p">The analyzer checks eight criteria and scores them. The generator uses Python's secrets module, which reads from the operating system's cryptographically secure random number generator (CSPRNG) — the same source used for generating encryption keys. It is fundamentally different from the random module, which is only suitable for statistics. The generator seeds the pool, guarantees at least one character from each selected set, fills the remaining slots randomly, then shuffles the whole result to eliminate predictable patterns at the front.</div>
+
+                <div class="about-h">Why companies use it</div>
+                <div class="about-li">Password policy enforcement: organizations require minimum complexity for all employee accounts, and automated tooling validates compliance during provisioning.</div>
+                <div class="about-li">Compliance: PCI-DSS, HIPAA, and SOC 2 Type II audits require documented password controls with evidence that weak credentials are prevented.</div>
+                <div class="about-li">Privileged account management: service accounts, API keys, and admin credentials must be machine-generated, never human-chosen, and rotated on a schedule.</div>
+                <div class="about-li">Security awareness: showing an employee a real-time score while they type is more effective than a policy document telling them what to do.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
 # ── IP Lookup ─────────────────────────────────────────────────────────────────
 with tab4:
     st.markdown("#### IP Geolocation Lookup")
@@ -302,6 +449,36 @@ with tab4:
     else:
         st.info("Enter an IP address above and click Look Up.")
 
+    with st.expander("📚 About this tool — examples, student uses, and why companies rely on it"):
+        st.markdown(
+            """
+            <div class="about-wrap">
+                <div class="about-h">What cybersecurity students can do with it</div>
+                <div class="about-li">Take a raw IP address from a server log or an IDS alert and immediately answer the first question a SOC analyst asks: where is this coming from and who owns it?</div>
+                <div class="about-li">Identify attacker infrastructure — certain ISPs and ASNs are notorious for hosting bulletproof servers, Tor exit nodes, and botnets. Recognizing them on sight is a core threat hunting skill.</div>
+                <div class="about-li">Build an enrichment pipeline: take the incident list from the Sentinel Dashboard, loop each source IP through this lookup, and produce a geo-tagged incident report automatically.</div>
+                <div class="about-li">Investigate suspicious outbound connections on your own machine by looking up where a process is calling home.</div>
+
+                <div class="about-h">Example</div>
+                <div class="about-ex">
+                    8.8.8.8         →  Google LLC, Mountain View, California, USA (known-good DNS)<br>
+                    185.220.101.1   →  Tor exit relay, Nuremberg, Germany (known Tor infrastructure)<br>
+                    45.155.205.233  →  Commonly seen in SSH brute-force campaigns, hosted on a bulletproof VPS
+                </div>
+
+                <div class="about-h">How it works</div>
+                <div class="about-p">Every ISP that operates on the internet registers its IP address ranges with a Regional Internet Registry: ARIN covers North America, RIPE covers Europe, and APNIC covers Asia-Pacific. ip-api.com maintains a continuously updated database that maps these registered blocks to city-level geography and ISP metadata. When you submit an IP, the tool sends a single JSON request to their free API and parses the response — the same API the Sentinel Dashboard uses to enrich every detected incident automatically.</div>
+
+                <div class="about-h">Why companies use it</div>
+                <div class="about-li">SOC analysts enrich every security alert with IP reputation and geolocation before deciding whether to escalate — raw IPs alone have no context.</div>
+                <div class="about-li">Firewalls and WAFs can block entire countries or autonomous systems as a rapid mitigation when an attack wave is traced to a single region or ISP.</div>
+                <div class="about-li">Incident response: knowing the attacker's ISP and country helps determine whether an attack is targeted or opportunistic, and whether to notify law enforcement.</div>
+                <div class="about-li">Threat intelligence platforms like Splunk and Microsoft Sentinel perform this lookup automatically on every event and store the results for correlation across incidents.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
 # ── Caesar Cipher ─────────────────────────────────────────────────────────────
 with tab5:
     st.markdown("#### Caesar Cipher / ROT13")
@@ -326,3 +503,35 @@ with tab5:
         st.code(result, language=None)
     else:
         st.info("Enter text above to apply the cipher.")
+
+    with st.expander("📚 About this tool — examples, student uses, and why companies rely on it"):
+        st.markdown(
+            """
+            <div class="about-wrap">
+                <div class="about-h">What cybersecurity students can do with it</div>
+                <div class="about-li">Solve ROT13 challenges — one of the most common beginner-level CTF cipher problems. Many CTF platforms use ROT13 to hide hints and flag previews.</div>
+                <div class="about-li">Demonstrate frequency analysis: because letters are only shifted and not scrambled, the most common letter in the ciphertext is still likely E in English — try to break a long encrypted message by analyzing letter frequency without knowing the shift.</div>
+                <div class="about-li">Understand why simple ciphers fail: the Caesar cipher has exactly 25 possible keys. An attacker can brute-force every one by hand in minutes. This is the foundation for understanding what makes modern encryption strong.</div>
+                <div class="about-li">Trace cryptographic history from Caesar to the Vigenere cipher to the Enigma machine to AES, and see how each generation closed the weaknesses of the previous one.</div>
+
+                <div class="about-h">Example</div>
+                <div class="about-ex">
+                    Input: "ATTACK AT DAWN"   Shift: 13 (ROT13)<br>
+                    Output: "NGGNPX NG QNJA"<br><br>
+                    Input: "NGGNPX NG QNJA"   Shift: 13 (ROT13 again)<br>
+                    Output: "ATTACK AT DAWN"  ← ROT13 is its own inverse (13 + 13 = 26)<br><br>
+                    Classic Caesar: "THE QUICK BROWN FOX"  Shift: 3  →  "WKH TXLFN EURZQ IRA"
+                </div>
+
+                <div class="about-h">How it works</div>
+                <div class="about-p">Each letter in the input is shifted forward in the alphabet by a fixed number, wrapping around at Z back to A. Numbers, spaces, and punctuation are left unchanged. To decode, shift in the opposite direction — or equivalently, shift forward by 26 minus the original shift. ROT13 uses shift 13, which means encoding and decoding are the same operation because 13 + 13 = 26 = one full rotation of the alphabet.</div>
+
+                <div class="about-h">Why companies understand it matters</div>
+                <div class="about-li">It directly teaches Kerckhoffs's principle: the security of a cipher must rest entirely in the key, not in keeping the algorithm secret. Caesar fails because the keyspace (25 possibilities) is trivially small, not because anyone knows the shift value.</div>
+                <div class="about-li">ROT13 appears in real production code as a lightweight obfuscation for spoilers, easter eggs, and non-sensitive data in games, forums, and developer tools — not for security, but as a convention.</div>
+                <div class="about-li">Security engineers use simple cipher examples in onboarding training to teach why weak cryptography is worse than no cryptography — it creates false confidence.</div>
+                <div class="about-li">Understanding why substitution ciphers fail at scale (preserved letter frequency, tiny keyspace) is the direct intellectual path to understanding why AES uses substitution AND permutation AND multiple rounds — each step addressing a specific historical weakness.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
