@@ -9,7 +9,12 @@ from pathlib import Path
 import bcrypt
 import streamlit as st
 import yaml
-from streamlit_cookies_controller import CookieController
+
+try:
+    from streamlit_cookies_controller import CookieController
+    _COOKIES_AVAILABLE = True
+except Exception:
+    _COOKIES_AVAILABLE = False
 
 st.set_page_config(
     page_title="Sentinel",
@@ -130,21 +135,29 @@ def _new_captcha(prefix: str = "captcha_") -> None:
     st.session_state[f"{prefix}b"] = random.randint(2, 15)
 
 
-# ── Cookie controller — must be initialized before any st.stop() ───────────────
-_ctrl = CookieController()
+# ── Cookie controller — gracefully skipped if package unavailable ──────────────
+_ctrl = None
+if _COOKIES_AVAILABLE:
+    try:
+        _ctrl = CookieController()
+    except Exception:
+        pass
 
 # ── Restore session from persistent cookie on page refresh ─────────────────────
-if not st.session_state.get("authenticated"):
-    _saved_token = _ctrl.get("sentinel_session")
-    if _saved_token:
-        _session_data = _validate_token(_saved_token)
-        if _session_data:
-            st.session_state["authenticated"]  = True
-            st.session_state["username"]       = _session_data["username"]
-            st.session_state["display_name"]   = _session_data["display_name"]
-            st.session_state["role"]           = _session_data["role"]
-            st.session_state["session_token"]  = _saved_token
-            st.rerun()
+if not st.session_state.get("authenticated") and _ctrl is not None:
+    try:
+        _saved_token = _ctrl.get("sentinel_session")
+        if _saved_token:
+            _session_data = _validate_token(_saved_token)
+            if _session_data:
+                st.session_state["authenticated"]  = True
+                st.session_state["username"]       = _session_data["username"]
+                st.session_state["display_name"]   = _session_data["display_name"]
+                st.session_state["role"]           = _session_data["role"]
+                st.session_state["session_token"]  = _saved_token
+                st.rerun()
+    except Exception:
+        pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -301,7 +314,11 @@ if not st.session_state.get("authenticated"):
                 st.session_state["display_name"]   = dname
                 st.session_state["role"]           = role
                 st.session_state["session_token"]  = token
-                _ctrl.set("sentinel_session", token)
+                if _ctrl is not None:
+                    try:
+                        _ctrl.set("sentinel_session", token)
+                    except Exception:
+                        pass
                 st.rerun()
             else:
                 _new_captcha("captcha_")
@@ -370,7 +387,11 @@ if not st.session_state.get("authenticated"):
                     st.session_state["display_name"]   = dname
                     st.session_state["role"]           = "viewer"
                     st.session_state["session_token"]  = token
-                    _ctrl.set("sentinel_session", token)
+                    if _ctrl is not None:
+                        try:
+                            _ctrl.set("sentinel_session", token)
+                        except Exception:
+                            pass
                     st.rerun()
 
     st.markdown(
@@ -466,7 +487,11 @@ with st.sidebar:
 
     if st.button("Log Out", use_container_width=True):
         _revoke_token(st.session_state.get("session_token", ""))
-        _ctrl.remove("sentinel_session")
+        if _ctrl is not None:
+            try:
+                _ctrl.remove("sentinel_session")
+            except Exception:
+                pass
         for key in [
             "authenticated", "username", "display_name", "role", "session_token",
             "captcha_a", "captcha_b", "captcha_reg_a", "captcha_reg_b",
