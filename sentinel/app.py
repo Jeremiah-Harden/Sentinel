@@ -35,6 +35,10 @@ with st.sidebar:
         st.markdown(
             f"""
             <div style="text-align:center;padding:0.5rem 0 0.2rem;">
+                <div style="font-size:0.65rem;font-weight:700;letter-spacing:0.18em;
+                            text-transform:uppercase;color:#888888;margin-bottom:0.55rem;">
+                    Founder
+                </div>
                 <img src="{_photo}"
                      style="width:110px;height:110px;border-radius:50%;
                             object-fit:cover;object-position:center top;
@@ -48,6 +52,15 @@ with st.sidebar:
                 <div style="font-size:0.72rem;color:#888888;margin-top:0.2rem;letter-spacing:0.06em;text-transform:uppercase;">
                     Cybersecurity · Kennesaw State University
                 </div>
+                <a href="https://www.linkedin.com/in/jeremiah-harden-50ba4331a/"
+                   target="_blank"
+                   style="display:inline-flex;align-items:center;gap:0.35rem;
+                          margin-top:0.55rem;padding:0.3rem 0.85rem;
+                          background:#0a66c2;border-radius:20px;
+                          font-size:0.72rem;font-weight:600;color:#ffffff;
+                          text-decoration:none;letter-spacing:0.04em;">
+                    in&nbsp; LinkedIn
+                </a>
             </div>
             <div style="font-size:0.78rem;color:#aaaaaa;line-height:1.6;
                         padding:0.6rem 0.75rem 0.5rem;text-align:center;
