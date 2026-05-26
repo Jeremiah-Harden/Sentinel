@@ -78,9 +78,10 @@ with st.sidebar:
 
 pg = st.navigation(
     [
-        st.Page("pages/welcome.py",   title="Home",      icon="🏠", default=True),
-        st.Page("pages/dashboard.py", title="Dashboard", icon="📊"),
-        st.Page("pages/tools.py",     title="Tools",     icon="⚡"),
+        st.Page("pages/welcome.py",            title="Home",      icon="🏠", default=True),
+        st.Page("pages/dashboard.py",          title="Dashboard", icon="📊"),
+        st.Page("pages/tools.py",              title="Tools",     icon="⚡"),
+        st.Page("pages/active_directory.py",   title="AD Lab",    icon="🏢"),
     ],
     position="sidebar",
 )
