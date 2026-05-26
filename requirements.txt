@@ -1,0 +1,3 @@
+firecrawl-py
+openpyxl
+python-dotenv

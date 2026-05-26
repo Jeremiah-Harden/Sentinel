@@ -1,0 +1,22 @@
+# Secrets — never commit
+.env
+credentials.json
+token.json
+.mcp.json
+.claude/
+
+# Scratch space
+.tmp/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

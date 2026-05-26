@@ -1,0 +1,36 @@
+May 20 14:01:03 webserver sshd[2341]: Failed password for root from 203.0.113.45 port 48231 ssh2
+May 20 14:01:05 webserver sshd[2342]: Failed password for root from 203.0.113.45 port 48232 ssh2
+May 20 14:01:06 webserver sshd[2343]: Failed password for admin from 203.0.113.45 port 48233 ssh2
+May 20 14:01:07 webserver sshd[2344]: Failed password for ubuntu from 203.0.113.45 port 48234 ssh2
+May 20 14:01:08 webserver sshd[2345]: Failed password for postgres from 203.0.113.45 port 48235 ssh2
+May 20 14:01:09 webserver sshd[2346]: Failed password for oracle from 203.0.113.45 port 48236 ssh2
+May 20 14:01:10 webserver sshd[2347]: Failed password for deploy from 203.0.113.45 port 48237 ssh2
+May 20 14:01:11 webserver sshd[2348]: Failed password for git from 203.0.113.45 port 48238 ssh2
+May 20 14:01:12 webserver sshd[2349]: Failed password for user from 203.0.113.45 port 48239 ssh2
+May 20 14:01:13 webserver sshd[2350]: Failed password for deploy from 203.0.113.45 port 48240 ssh2
+May 20 14:01:14 webserver sshd[2351]: Accepted password for deploy from 203.0.113.45 port 48241 ssh2
+May 20 14:05:22 webserver sshd[2380]: Failed password for root from 198.51.100.23 port 53311 ssh2
+May 20 14:05:23 webserver sshd[2381]: Failed password for root from 198.51.100.23 port 53312 ssh2
+May 20 14:05:24 webserver sshd[2382]: Failed password for root from 198.51.100.23 port 53313 ssh2
+May 20 14:05:25 webserver sshd[2383]: Failed password for root from 198.51.100.23 port 53314 ssh2
+May 20 14:05:26 webserver sshd[2384]: Failed password for root from 198.51.100.23 port 53315 ssh2
+May 20 14:05:27 webserver sshd[2385]: Failed password for root from 198.51.100.23 port 53316 ssh2
+May 20 14:08:01 webserver sudo[2400]: pam_unix(sudo:auth): authentication failure; logname=deploy uid=1002 euid=0 tty=/dev/pts/1 ruser=deploy rhost=  user=deploy
+May 20 14:08:03 webserver sudo[2401]: deploy : TTY=pts/1 ; PWD=/home/deploy ; USER=root ; COMMAND=/bin/bash
+May 20 14:09:01 webserver useradd[2410]: new user: name=backdoor,UID=0,GID=0,home=/root,shell=/bin/bash
+May 20 15:00:01 webserver sshd[3100]: Invalid user ftpuser from 192.0.2.88 port 22345
+May 20 15:00:02 webserver sshd[3101]: Invalid user dbadmin from 192.0.2.88 port 22346
+May 20 15:00:03 webserver sshd[3102]: Invalid user testuser from 192.0.2.88 port 22347
+May 20 15:00:04 webserver sshd[3103]: Invalid user jenkins from 192.0.2.88 port 22348
+May 20 15:00:05 webserver sshd[3104]: Invalid user ansible from 192.0.2.88 port 22349
+May 20 15:00:06 webserver sshd[3105]: Invalid user webapp from 192.0.2.88 port 22350
+May 20 15:00:07 webserver sshd[3106]: Invalid user devops from 192.0.2.88 port 22351
+May 20 16:30:01 webserver sshd[4001]: Accepted password for alice from 10.0.0.5 port 34201 ssh2
+May 20 16:35:11 webserver sshd[4010]: Failed password for bob from 10.0.0.99 port 44001 ssh2
+May 20 17:00:00 webserver sshd[4100]: Failed password for root from 192.0.2.44 port 55100 ssh2
+May 20 17:00:01 webserver sshd[4101]: Failed password for root from 192.0.2.44 port 55101 ssh2
+May 20 17:00:02 webserver sshd[4102]: Failed password for root from 192.0.2.44 port 55102 ssh2
+May 20 17:00:03 webserver sshd[4103]: Failed password for root from 192.0.2.44 port 55103 ssh2
+May 20 17:00:04 webserver sshd[4104]: Failed password for root from 192.0.2.44 port 55104 ssh2
+May 20 17:00:05 webserver sshd[4105]: Failed password for root from 192.0.2.44 port 55105 ssh2
+May 20 17:00:06 webserver sshd[4106]: Failed password for root from 192.0.2.44 port 55106 ssh2

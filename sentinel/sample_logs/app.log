@@ -1,0 +1,22 @@
+2026-05-25 08:14:32 INFO  [auth-service] User 'jdoe' successfully authenticated from 192.168.4.12
+2026-05-25 08:15:01 WARN  [auth-service] Failed login for user 'root' from 185.220.100.47
+2026-05-25 08:15:01 INFO  [firewall] Blocked IP 185.220.100.47 on port 22 — exceeded 5 login attempts
+2026-05-25 08:23:47 INFO  [web-app] GET /api/data/user/1234 — 200 OK (response time: 143ms)
+2026-05-25 08:24:10 ERROR [db-service] Connection timeout to database cluster 'us-east-2'
+2026-05-25 08:24:15 INFO  [monitor] Retrying database connection (attempt #2)
+2026-05-25 08:24:16 INFO  [db-service] Connection re-established
+2026-05-25 08:29:02 ALERT [ids] Suspicious port scan detected from 45.155.205.33 targeting 10.0.0.15
+2026-05-25 08:29:04 INFO  [firewall] Blocked IP 45.155.205.33 on all ports for 60min
+2026-05-25 08:36:29 INFO  [proxy] Outbound HTTPS request to api.github.com — 200 OK
+2026-05-25 08:40:17 WARN  [siem] High CPU usage detected on node 'server-04' (92%)
+2026-05-25 08:41:22 INFO  [auth-service] User 'sadmin' elevated privileges to 'admin' on node 'server-03'
+2026-05-25 08:43:59 WARN  [auth-service] Unauthorized API access attempt — token expired (user: 'tuser')
+2026-05-25 08:45:07 INFO  [vpn] User 'rpatel' connected via VPN — assigned IP 10.8.0.45
+2026-05-25 08:47:12 ERROR [web-app] POST /api/upload — 500 Internal Server Error (traceID: 8f2a4e)
+2026-05-25 08:51:33 INFO  [malware-scanner] Scanned 1023 files — 0 threats found
+2026-05-25 08:55:03 ALERT [ids] SQL injection attempt detected on /login.php from 91.198.173.55
+2026-05-25 08:55:04 INFO  [firewall] Blocked IP 91.198.173.55 for 24 hours
+2026-05-25 08:58:19 INFO  [web-app] GET /api/audit/logs/export — 200 OK (user: 'admin')
+2026-05-25 09:03:44 INFO  [backup-service] Completed daily backup — duration: 6m42s
+2026-05-25 09:06:31 WARN  [monitor] Disk space low on '/var/log' — 91% used
+2026-05-25 09:08:22 INFO  [syslog] Rotated logs — new file created: security_events_2026-05-25.log
