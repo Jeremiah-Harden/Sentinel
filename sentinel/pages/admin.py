@@ -524,9 +524,11 @@ with tab_siem:
             incidents, key=lambda i: _sev_order.get(i.get("severity", "info"), 4)
         )
 
-        n_ips = len({i.get("source_ip") for i in incidents if i.get("source_ip")})
+        n_ips    = len({i.get("source_ip") for i in incidents if i.get("source_ip")})
+        n_crit_s = sum(1 for i in incidents if i.get("severity") == "critical")
+        n_high_s = sum(1 for i in incidents if i.get("severity") == "high")
         st.caption(
-            f"{len(incidents)} incident(s) · {n_critical + n_high} high/critical · "
+            f"{len(incidents)} incident(s) · {n_crit_s + n_high_s} high/critical · "
             f"{n_ips} unique attacker IP(s) · sorted by severity"
         )
 
@@ -622,6 +624,8 @@ with tab_users_tab:
 
     st.markdown("#### Current Users")
 
+    config = _load()
+    users  = config["credentials"]["usernames"]
     for uname, info in users.items():
         role_cls = "role-admin" if info.get("role") == "admin" else "role-viewer"
         you_tag  = (
