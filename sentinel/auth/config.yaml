@@ -1,0 +1,12 @@
+credentials:
+  usernames:
+    jeremiah:
+      name: Jeremiah Harden
+      email: jeremiah.harden11@gmail.com
+      password: "$2b$12$cpYtib7pIJThpmISLXNsGuMRKNIXPqt4Cn7Z7h/UqgDoBpJG8sqdO"
+      role: admin
+    guest:
+      name: Guest
+      email: guest@sentinel.local
+      password: "$2b$12$Udqu42kOMFlbhOiFRX/wme.g3R8duBbDjPzE3KA.Ll4SsNTS9vzJO"
+      role: viewer

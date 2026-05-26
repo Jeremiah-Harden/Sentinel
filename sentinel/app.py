@@ -1,14 +1,39 @@
 import base64
 from pathlib import Path
+
+import bcrypt
 import streamlit as st
+import yaml
 
 st.set_page_config(
     page_title="Sentinel",
     page_icon="🛡",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
+# ── Auth helpers ───────────────────────────────────────────────────────────────
+_CFG_PATH = Path(__file__).parent / "auth" / "config.yaml"
+
+
+@st.cache_data(ttl=60)
+def _load_config():
+    with open(_CFG_PATH) as f:
+        return yaml.safe_load(f)
+
+
+def _check_password(username: str, password: str, config: dict) -> bool:
+    user = config["credentials"]["usernames"].get(username.lower())
+    if not user:
+        return False
+    return bcrypt.checkpw(password.encode(), user["password"].encode())
+
+
+def _user_info(username: str, config: dict) -> dict:
+    return config["credentials"]["usernames"].get(username.lower(), {})
+
+
+# ── Image helper ───────────────────────────────────────────────────────────────
 def _img_b64(name: str) -> str:
     p = Path(__file__).parent / "assets" / name
     try:
@@ -17,7 +42,112 @@ def _img_b64(name: str) -> str:
     except Exception:
         return ""
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LOGIN PAGE — shown when not authenticated
+# ══════════════════════════════════════════════════════════════════════════════
+if not st.session_state.get("authenticated"):
+
+    st.markdown(
+        """
+        <style>
+        [data-testid="stAppViewContainer"] { background: #050d1a !important; }
+        section[data-testid="stSidebar"]   { display: none !important; }
+        [data-testid="collapsedControl"]   { display: none !important; }
+        .main .block-container {
+            max-width: 420px !important;
+            padding: 5rem 1.5rem 2rem !important;
+            margin: 0 auto !important;
+        }
+        .login-shield { font-size: 3rem; text-align: center; margin-bottom: 0.2rem; }
+        .login-title {
+            font-size: 2.6rem;
+            font-weight: 900;
+            text-align: center;
+            background: linear-gradient(135deg, #00d4ff 0%, #ffffff 50%, #00d4ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: drop-shadow(0 0 18px rgba(0,212,255,0.5));
+            letter-spacing: 0.42em;
+            margin: 0;
+        }
+        .login-sub {
+            text-align: center;
+            color: #2d5a6a;
+            font-size: 0.68rem;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            margin-top: 0.35rem;
+        }
+        .login-line {
+            width: 160px;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #00d4ff, transparent);
+            margin: 1.3rem auto 2rem;
+        }
+        .login-footer {
+            text-align: center;
+            color: #1e3a45;
+            font-size: 0.7rem;
+            margin-top: 2rem;
+            letter-spacing: 0.08em;
+        }
+        /* Style the form container */
+        [data-testid="stForm"] {
+            background: rgba(0,15,30,0.85) !important;
+            border: 1px solid rgba(0,212,255,0.15) !important;
+            border-radius: 14px !important;
+            padding: 1.6rem 1.8rem !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="login-shield">🛡</div>
+        <div class="login-title">SENTINEL</div>
+        <div class="login-sub">Security Operations · Restricted Access</div>
+        <div class="login-line"></div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    config = _load_config()
+    login_error = st.session_state.pop("login_error", None)
+
+    with st.form("login_form", clear_on_submit=False):
+        username_input = st.text_input("Username", placeholder="Enter your username")
+        password_input = st.text_input("Password", type="password", placeholder="Enter your password")
+        submitted = st.form_submit_button("Log In", use_container_width=True, type="primary")
+
+    if submitted:
+        if _check_password(username_input, password_input, config):
+            info = _user_info(username_input, config)
+            st.session_state["authenticated"]  = True
+            st.session_state["username"]       = username_input.lower()
+            st.session_state["display_name"]   = info.get("name", username_input)
+            st.session_state["role"]           = info.get("role", "viewer")
+            st.rerun()
+        else:
+            st.error("Incorrect username or password — check caps lock and try again.")
+
+    st.markdown(
+        '<div class="login-footer">Sentinel v1.0 · Jeremiah Harden · Kennesaw State University</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.stop()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTHENTICATED — full app
+# ══════════════════════════════════════════════════════════════════════════════
 _photo = _img_b64("jeremiah.png")
+_role  = st.session_state.get("role", "viewer")
+_uname = st.session_state.get("display_name", "")
 
 with st.sidebar:
     st.markdown(
@@ -31,6 +161,7 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
     st.divider()
+
     if _photo:
         st.markdown(
             f"""
@@ -74,15 +205,42 @@ with st.sidebar:
             """,
             unsafe_allow_html=True,
         )
+
     st.divider()
 
-pg = st.navigation(
-    [
-        st.Page("pages/welcome.py",            title="Home",      icon="🏠", default=True),
-        st.Page("pages/dashboard.py",          title="Dashboard", icon="📊"),
-        st.Page("pages/tools.py",              title="Tools",     icon="⚡"),
-        st.Page("pages/active_directory.py",   title="AD Lab",    icon="🏢"),
-    ],
-    position="sidebar",
-)
+    # Logged-in user badge
+    st.markdown(
+        f"""
+        <div style="background:rgba(0,212,255,0.07);border:1px solid rgba(0,212,255,0.18);
+                    border-radius:10px;padding:0.55rem 0.8rem;margin-bottom:0.4rem;">
+            <div style="font-size:0.62rem;font-weight:700;letter-spacing:0.16em;
+                        color:#00d4ff;text-transform:uppercase;margin-bottom:0.2rem;">
+                Logged in as
+            </div>
+            <div style="color:#ffffff;font-size:0.88rem;font-weight:600;">{_uname}</div>
+            <div style="font-size:0.65rem;color:#3a7a8a;text-transform:uppercase;
+                        letter-spacing:0.1em;margin-top:0.1rem;">{_role}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if st.button("Log Out", use_container_width=True):
+        for key in ["authenticated", "username", "display_name", "role"]:
+            st.session_state.pop(key, None)
+        st.rerun()
+
+    st.divider()
+
+# ── Navigation (role-aware) ───────────────────────────────────────────────────
+pages = [
+    st.Page("pages/welcome.py",   title="Home",      icon="🏠", default=True),
+    st.Page("pages/dashboard.py", title="Dashboard", icon="📊"),
+    st.Page("pages/tools.py",     title="Tools",     icon="⚡"),
+]
+
+if _role == "admin":
+    pages.append(st.Page("pages/admin.py", title="Users", icon="👥"))
+
+pg = st.navigation(pages, position="sidebar")
 pg.run()
