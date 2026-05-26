@@ -3,11 +3,13 @@ import hmac
 import json
 import random
 import time
+import uuid
 from pathlib import Path
 
 import bcrypt
 import streamlit as st
 import yaml
+from streamlit_cookies_controller import CookieController
 
 st.set_page_config(
     page_title="Sentinel",
@@ -16,11 +18,14 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ── Auth helpers ───────────────────────────────────────────────────────────────
-_CFG_PATH  = Path(__file__).parent / "auth" / "config.yaml"
-_SESS_PATH = Path(__file__).parent / "auth" / "sessions.json"
+# ── Paths ──────────────────────────────────────────────────────────────────────
+_CFG_PATH   = Path(__file__).parent / "auth" / "config.yaml"
+_SESS_PATH  = Path(__file__).parent / "auth" / "sessions.json"
+_TOKEN_PATH = Path(__file__).parent / "auth" / "tokens.json"
+_TOKEN_TTL  = 7 * 24 * 3600  # 7 days
 
 
+# ── Config helpers ─────────────────────────────────────────────────────────────
 @st.cache_data(ttl=60)
 def _load_config():
     with open(_CFG_PATH) as f:
@@ -44,17 +49,61 @@ def _save_config(config: dict) -> None:
     st.cache_data.clear()
 
 
-# ── Image helper ───────────────────────────────────────────────────────────────
-def _img_b64(name: str) -> str:
-    p = Path(__file__).parent / "assets" / name
+# ── Persistent session tokens ──────────────────────────────────────────────────
+def _load_tokens() -> dict:
     try:
-        ext = p.suffix.lstrip(".")
-        return f"data:image/{ext};base64," + base64.b64encode(p.read_bytes()).decode()
+        if _TOKEN_PATH.exists():
+            return json.loads(_TOKEN_PATH.read_text())
     except Exception:
-        return ""
+        pass
+    return {}
 
 
-# ── Session ping (powers "Online Now" counter in admin) ────────────────────────
+def _save_tokens(tokens: dict) -> None:
+    try:
+        _TOKEN_PATH.write_text(json.dumps(tokens))
+    except Exception:
+        pass
+
+
+def _create_token(username: str, display_name: str, role: str) -> str:
+    token = str(uuid.uuid4())
+    now   = time.time()
+    tokens = _load_tokens()
+    tokens = {k: v for k, v in tokens.items() if v.get("expires", 0) > now}
+    tokens[token] = {
+        "username":     username,
+        "display_name": display_name,
+        "role":         role,
+        "expires":      now + _TOKEN_TTL,
+    }
+    _save_tokens(tokens)
+    return token
+
+
+def _validate_token(token: str) -> dict | None:
+    if not token:
+        return None
+    tokens = _load_tokens()
+    entry  = tokens.get(str(token))
+    if not entry:
+        return None
+    if entry.get("expires", 0) < time.time():
+        tokens.pop(str(token), None)
+        _save_tokens(tokens)
+        return None
+    return entry
+
+
+def _revoke_token(token: str) -> None:
+    if not token:
+        return
+    tokens = _load_tokens()
+    tokens.pop(str(token), None)
+    _save_tokens(tokens)
+
+
+# ── Session ping (powers "Online Now" in admin) ────────────────────────────────
 def _ping_session(username: str) -> None:
     if not username:
         return
@@ -66,9 +115,36 @@ def _ping_session(username: str) -> None:
         pass
 
 
+# ── Image helper ───────────────────────────────────────────────────────────────
+def _img_b64(name: str) -> str:
+    p = Path(__file__).parent / "assets" / name
+    try:
+        ext = p.suffix.lstrip(".")
+        return f"data:image/{ext};base64," + base64.b64encode(p.read_bytes()).decode()
+    except Exception:
+        return ""
+
+
 def _new_captcha(prefix: str = "captcha_") -> None:
     st.session_state[f"{prefix}a"] = random.randint(2, 15)
     st.session_state[f"{prefix}b"] = random.randint(2, 15)
+
+
+# ── Cookie controller — must be initialized before any st.stop() ───────────────
+_ctrl = CookieController()
+
+# ── Restore session from persistent cookie on page refresh ─────────────────────
+if not st.session_state.get("authenticated"):
+    _saved_token = _ctrl.get("sentinel_session")
+    if _saved_token:
+        _session_data = _validate_token(_saved_token)
+        if _session_data:
+            st.session_state["authenticated"]  = True
+            st.session_state["username"]       = _session_data["username"]
+            st.session_state["display_name"]   = _session_data["display_name"]
+            st.session_state["role"]           = _session_data["role"]
+            st.session_state["session_token"]  = _saved_token
+            st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -89,24 +165,16 @@ if not st.session_state.get("authenticated"):
         }
         .login-shield { font-size: 3rem; text-align: center; margin-bottom: 0.2rem; }
         .login-title {
-            font-size: 2.6rem;
-            font-weight: 900;
-            text-align: center;
+            font-size: 2.6rem; font-weight: 900; text-align: center;
             background: linear-gradient(135deg, #00d4ff 0%, #ffffff 50%, #00d4ff 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
             background-clip: text;
             filter: drop-shadow(0 0 18px rgba(0,212,255,0.5));
-            letter-spacing: 0.42em;
-            margin: 0;
+            letter-spacing: 0.42em; margin: 0;
         }
         .login-sub {
-            text-align: center;
-            color: #2d5a6a;
-            font-size: 0.68rem;
-            letter-spacing: 0.22em;
-            text-transform: uppercase;
-            margin-top: 0.35rem;
+            text-align: center; color: #2d5a6a; font-size: 0.68rem;
+            letter-spacing: 0.22em; text-transform: uppercase; margin-top: 0.35rem;
         }
         .login-line {
             width: 160px; height: 1px;
@@ -114,48 +182,36 @@ if not st.session_state.get("authenticated"):
             margin: 1.3rem auto 1.8rem;
         }
         .login-footer {
-            text-align: center;
-            color: #1e3a45;
-            font-size: 0.7rem;
-            margin-top: 2rem;
-            letter-spacing: 0.08em;
+            text-align: center; color: #1e3a45; font-size: 0.7rem;
+            margin-top: 2rem; letter-spacing: 0.08em;
         }
         [data-testid="stForm"] {
             background: rgba(0,15,30,0.85) !important;
             border: 1px solid rgba(0,212,255,0.15) !important;
-            border-radius: 14px !important;
-            padding: 1.6rem 1.8rem !important;
+            border-radius: 14px !important; padding: 1.6rem 1.8rem !important;
         }
-        /* Feature highlights */
         .login-features {
             background: rgba(0,212,255,0.04);
             border: 1px solid rgba(0,212,255,0.12);
-            border-radius: 10px;
-            padding: 0.8rem 1rem;
-            margin-bottom: 1.4rem;
+            border-radius: 10px; padding: 0.8rem 1rem; margin-bottom: 1.4rem;
         }
         .feat-row {
-            display: flex; align-items: flex-start;
-            gap: 0.6rem; padding: 0.28rem 0;
-            border-bottom: 1px solid rgba(0,212,255,0.05);
+            display: flex; align-items: flex-start; gap: 0.6rem;
+            padding: 0.28rem 0; border-bottom: 1px solid rgba(0,212,255,0.05);
         }
         .feat-row:last-child { border-bottom: none; }
         .feat-icon { font-size: 0.9rem; flex-shrink: 0; padding-top: 0.05rem; }
         .feat-text { color: #5a8fa0; font-size: 0.76rem; line-height: 1.45; }
         .feat-text strong { color: #00d4ff; font-weight: 700; }
-        /* CAPTCHA */
         .captcha-box {
             background: rgba(0,212,255,0.03);
             border: 1px solid rgba(0,212,255,0.22);
-            border-radius: 8px;
-            padding: 0.65rem 1rem 0.5rem;
-            margin-bottom: 0.5rem;
-            text-align: center;
+            border-radius: 8px; padding: 0.65rem 1rem 0.5rem;
+            margin-bottom: 0.5rem; text-align: center;
         }
         .captcha-label {
-            font-size: 0.6rem; font-weight: 700;
-            letter-spacing: 0.18em; color: #00d4ff;
-            text-transform: uppercase; margin-bottom: 0.2rem;
+            font-size: 0.6rem; font-weight: 700; letter-spacing: 0.18em;
+            color: #00d4ff; text-transform: uppercase; margin-bottom: 0.2rem;
         }
         .captcha-problem {
             font-size: 1.55rem; font-weight: 900; color: #ffffff;
@@ -200,14 +256,12 @@ if not st.session_state.get("authenticated"):
         unsafe_allow_html=True,
     )
 
-    # Initialize per-form CAPTCHA challenges
     if "captcha_a" not in st.session_state:
         _new_captcha("captcha_")
     if "captcha_reg_a" not in st.session_state:
         _new_captcha("captcha_reg_")
 
     config = _load_config()
-
     tab_login, tab_register = st.tabs(["Log In", "Create Account"])
 
     # ── Log In ────────────────────────────────────────────────────────────────
@@ -237,11 +291,17 @@ if not st.session_state.get("authenticated"):
                 _new_captcha("captcha_")
                 st.error("Human verification failed — a new equation has been generated, try again.")
             elif _check_password(username_input, password_input, config):
-                info = _user_info(username_input, config)
-                st.session_state["authenticated"] = True
-                st.session_state["username"]      = username_input.strip().lower()
-                st.session_state["display_name"]  = info.get("name", username_input)
-                st.session_state["role"]          = info.get("role", "viewer")
+                info    = _user_info(username_input, config)
+                un      = username_input.strip().lower()
+                dname   = info.get("name", username_input)
+                role    = info.get("role", "viewer")
+                token   = _create_token(un, dname, role)
+                st.session_state["authenticated"]  = True
+                st.session_state["username"]       = un
+                st.session_state["display_name"]   = dname
+                st.session_state["role"]           = role
+                st.session_state["session_token"]  = token
+                _ctrl.set("sentinel_session", token)
                 st.rerun()
             else:
                 _new_captcha("captcha_")
@@ -252,11 +312,11 @@ if not st.session_state.get("authenticated"):
         _ra = st.session_state["captcha_reg_a"]
         _rb = st.session_state["captcha_reg_b"]
         with st.form("register_form", clear_on_submit=True):
-            reg_display  = st.text_input("Full Name",         placeholder="Your name")
-            reg_username = st.text_input("Username",          placeholder="lowercase, no spaces")
-            reg_email    = st.text_input("Email (optional)",  placeholder="you@example.com")
-            reg_pw       = st.text_input("Password",          type="password", placeholder="At least 8 characters")
-            reg_pw2      = st.text_input("Confirm Password",  type="password", placeholder="Repeat your password")
+            reg_display  = st.text_input("Full Name",        placeholder="Your name")
+            reg_username = st.text_input("Username",         placeholder="lowercase, no spaces")
+            reg_email    = st.text_input("Email (optional)", placeholder="you@example.com")
+            reg_pw       = st.text_input("Password",         type="password", placeholder="At least 8 characters")
+            reg_pw2      = st.text_input("Confirm Password", type="password", placeholder="Repeat your password")
             st.markdown(
                 f'<div class="captcha-box">'
                 f'<div class="captcha-label">🤖 Human Verification — solve to continue</div>'
@@ -303,10 +363,14 @@ if not st.session_state.get("authenticated"):
                         "role":     "viewer",
                     }
                     _save_config(config)
-                    st.session_state["authenticated"] = True
-                    st.session_state["username"]      = un
-                    st.session_state["display_name"]  = reg_display.strip()
-                    st.session_state["role"]          = "viewer"
+                    dname  = reg_display.strip()
+                    token  = _create_token(un, dname, "viewer")
+                    st.session_state["authenticated"]  = True
+                    st.session_state["username"]       = un
+                    st.session_state["display_name"]   = dname
+                    st.session_state["role"]           = "viewer"
+                    st.session_state["session_token"]  = token
+                    _ctrl.set("sentinel_session", token)
                     st.rerun()
 
     st.markdown(
@@ -401,8 +465,10 @@ with st.sidebar:
     )
 
     if st.button("Log Out", use_container_width=True):
+        _revoke_token(st.session_state.get("session_token", ""))
+        _ctrl.remove("sentinel_session")
         for key in [
-            "authenticated", "username", "display_name", "role",
+            "authenticated", "username", "display_name", "role", "session_token",
             "captcha_a", "captcha_b", "captcha_reg_a", "captcha_reg_b",
             "admin_reauth_time",
         ]:
