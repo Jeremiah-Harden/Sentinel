@@ -66,10 +66,10 @@ with st.sidebar:
                         padding:0.6rem 0.75rem 0.5rem;text-align:center;
                         border-top:1px solid #222222;border-bottom:1px solid #222222;
                         margin:0.4rem 0 0.6rem;">
-                I build security tools to apply what I study in the real world.
+                I build security tools to put what I study into practice.
                 Sentinel parses raw logs, detects active threats, and maps
-                attack origins — the same workflow a SOC analyst runs every day.
-                This isn't just a project. It's how I practice defense.
+                attack origins the same way a SOC analyst would.
+                This is not just a project. This is how I prepare.
             </div>
             """,
             unsafe_allow_html=True,
