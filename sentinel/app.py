@@ -24,8 +24,8 @@ with st.sidebar:
         """
         <div style="text-align:center;padding:1rem 0 0.5rem;">
             <span style="font-size:2rem;">🛡</span><br>
-            <span style="color:#BF5FFF;font-size:1.2rem;font-weight:900;letter-spacing:0.2em;">SENTINEL</span><br>
-            <span style="color:#6b5a8a;font-size:0.72rem;letter-spacing:0.12em;">SECURITY OPERATIONS</span>
+            <span style="color:#00d4ff;font-size:1.2rem;font-weight:900;letter-spacing:0.2em;">SENTINEL</span><br>
+            <span style="color:#0a5a70;font-size:0.72rem;letter-spacing:0.12em;">SECURITY OPERATIONS</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -80,6 +80,7 @@ pg = st.navigation(
     [
         st.Page("pages/welcome.py",   title="Home",      icon="🏠", default=True),
         st.Page("pages/dashboard.py", title="Dashboard", icon="📊"),
+        st.Page("pages/tools.py",     title="Tools",     icon="⚡"),
     ],
     position="sidebar",
 )

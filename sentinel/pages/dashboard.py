@@ -20,10 +20,10 @@ st.markdown(
     """
     <style>
     [data-testid="stAppViewContainer"] {
-        background: #07111f !important;
+        background: #050d1a !important;
     }
-    [data-testid="stSidebar"]        { background: #0c1e31 !important; }
-    [data-testid="stSidebarContent"] { background: #0c1e31 !important; }
+    [data-testid="stSidebar"]        { background: #0d0d0d !important; }
+    [data-testid="stSidebarContent"] { background: #0d0d0d !important; }
     [data-testid="stMetricValue"]    { font-size: 2rem; font-weight: 700; }
     .stTabs [data-baseweb="tab"]     { font-weight: 600; }
     </style>
@@ -180,8 +180,8 @@ with tab_tl:
             title="Incident Timeline",
         )
         fig.update_layout(
-            plot_bgcolor="#07111f", paper_bgcolor="#07111f",
-            font_color="#d8e4ef", title_font_color="#D4AF37",
+            plot_bgcolor="#050d1a", paper_bgcolor="#050d1a",
+            font_color="#d8e4ef", title_font_color="#00d4ff",
             yaxis_title="", xaxis_title="",
             legend_title_text="Severity",
         )
@@ -224,12 +224,12 @@ with tab_map:
             )
             fig.update_layout(
                 geo=dict(
-                    bgcolor="#07111f", showland=True, landcolor="#0c1e31",
-                    showocean=True, oceancolor="#07111f",
-                    showcountries=True, countrycolor="#1a2e42",
+                    bgcolor="#050d1a", showland=True, landcolor="#0a1628",
+                    showocean=True, oceancolor="#050d1a",
+                    showcountries=True, countrycolor="#1a3050",
                 ),
-                plot_bgcolor="#07111f", paper_bgcolor="#07111f",
-                font_color="#d8e4ef", title_font_color="#D4AF37",
+                plot_bgcolor="#050d1a", paper_bgcolor="#050d1a",
+                font_color="#d8e4ef", title_font_color="#00d4ff",
             )
             st.plotly_chart(fig, use_container_width=True)
 
