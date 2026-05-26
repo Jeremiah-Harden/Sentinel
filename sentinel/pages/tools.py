@@ -2,6 +2,8 @@ import hashlib
 import base64 as b64_module
 import ipaddress
 import re
+import secrets
+import string
 
 import pandas as pd
 import plotly.express as px
@@ -199,6 +201,44 @@ with tab3:
                 st.success("All criteria met!")
     else:
         st.info("Enter a password above to analyze its strength.")
+
+    st.divider()
+    st.markdown("#### Password Generator")
+    st.caption("Generate a cryptographically secure random password, then paste it into the field above to check its strength.")
+
+    g_len = st.slider("Length", min_value=8, max_value=64, value=16, key="g_len")
+    g1, g2, g3, g4 = st.columns(4)
+    g_upper  = g1.checkbox("A-Z uppercase",  value=True, key="g_upper")
+    g_lower  = g2.checkbox("a-z lowercase",  value=True, key="g_lower")
+    g_digits = g3.checkbox("0-9 digits",     value=True, key="g_digits")
+    g_spec   = g4.checkbox("!@# symbols",    value=True, key="g_spec")
+
+    SYMBOLS = "!@#$%^&*()-_=+[]{}|;:,.<>?"
+
+    if st.button("Generate", type="primary", key="gen_btn"):
+        pool = ""
+        required = []
+        if g_upper:  pool += string.ascii_uppercase;  required.append(secrets.choice(string.ascii_uppercase))
+        if g_lower:  pool += string.ascii_lowercase;  required.append(secrets.choice(string.ascii_lowercase))
+        if g_digits: pool += string.digits;           required.append(secrets.choice(string.digits))
+        if g_spec:   pool += SYMBOLS;                 required.append(secrets.choice(SYMBOLS))
+
+        if not pool:
+            st.warning("Select at least one character set.")
+        else:
+            padding = [secrets.choice(pool) for _ in range(g_len - len(required))]
+            combined = required + padding
+            secrets.SystemRandom().shuffle(combined)
+            st.session_state["gen_pw"] = "".join(combined)
+
+    if "gen_pw" in st.session_state:
+        st.markdown(
+            f'<div class="result-label">Generated Password</div>'
+            f'<div class="result-box">{st.session_state["gen_pw"]}</div>',
+            unsafe_allow_html=True,
+        )
+        st.code(st.session_state["gen_pw"], language=None)
+        st.caption("Copy the password above into the input field to run the strength check on it.")
 
 # ── IP Lookup ─────────────────────────────────────────────────────────────────
 with tab4:
