@@ -3,7 +3,10 @@ from pathlib import Path
 import streamlit as st
 
 _bg_path = Path(__file__).parent.parent / "assets" / "atlanta.jpg"
-_bg_b64  = base64.b64encode(_bg_path.read_bytes()).decode()
+try:
+    _bg_b64 = base64.b64encode(_bg_path.read_bytes()).decode()
+except Exception:
+    _bg_b64 = ""
 
 # ── Background + sidebar (f-string — needs base64 variable) ──────────────────
 st.markdown(
