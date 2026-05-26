@@ -434,17 +434,78 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── Stats row ─────────────────────────────────────────────────────────────────
-incidents  = _load_incidents()
-n_critical = sum(1 for i in incidents if i.get("severity") == "critical")
-n_high     = sum(1 for i in incidents if i.get("severity") == "high")
+# incidents needed by SIEM tab below — loaded once at module level (cached)
+incidents = _load_incidents()
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Total Users",        len(users))
-c2.metric("Online Now",         _online_users(),  help="Active within the last 5 minutes")
-c3.metric("Incidents Detected", len(incidents),   help="From sample logs — upload real logs in Dashboard for live data")
-c4.metric("🔴 Critical",         n_critical)
 
+# ── Live stats panel — auto-refreshes every 30 s without full page reload ──────
+@st.fragment(run_every=30)
+def _live_stats() -> None:
+    cfg        = _load()
+    usr        = cfg["credentials"]["usernames"]
+    inc        = _load_incidents()
+    n_crit     = sum(1 for i in inc if i.get("severity") == "critical")
+
+    st.markdown(
+        '<span style="font-size:0.63rem;font-weight:700;letter-spacing:0.14em;'
+        'color:#22c55e;text-transform:uppercase;">🟢 Live · auto-refreshes every 30 s</span>',
+        unsafe_allow_html=True,
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Users",        len(usr))
+    c2.metric("Online Now",         _online_users(), help="Active within the last 5 minutes")
+    c3.metric("Incidents Detected", len(inc),        help="From sample logs — upload real logs in Dashboard for live data")
+    c4.metric("🔴 Critical",         n_crit)
+
+    # Recent signups feed
+    now    = time.time()
+    recent = sorted(
+        [(un, info) for un, info in usr.items() if info.get("created_at")],
+        key=lambda x: x[1]["created_at"],
+        reverse=True,
+    )[:6]
+
+    if recent:
+        st.markdown(
+            '<div style="margin-top:0.9rem;margin-bottom:0.3rem;font-size:0.68rem;'
+            'font-weight:700;letter-spacing:0.14em;color:#00d4ff;text-transform:uppercase;">'
+            'Recent Signups</div>',
+            unsafe_allow_html=True,
+        )
+        for un, info in recent:
+            age = int(now - info["created_at"])
+            if age < 60:
+                age_str = "just now"
+            elif age < 3600:
+                age_str = f"{age // 60}m ago"
+            elif age < 86400:
+                age_str = f"{age // 3600}h ago"
+            else:
+                age_str = f"{age // 86400}d ago"
+            new_badge = (
+                ' <span style="background:#22c55e;color:#000;font-size:0.58rem;'
+                'font-weight:900;border-radius:4px;padding:0.05rem 0.38rem;'
+                'letter-spacing:0.06em;vertical-align:middle;">NEW</span>'
+                if age < 3600 else ""
+            )
+            role_col = "#00d4ff" if info.get("role") == "admin" else "#a855f7"
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:0.55rem;'
+                f'padding:0.32rem 0;border-bottom:1px solid rgba(0,212,255,0.06);">'
+                f'<span style="font-size:0.88rem;">{"👑" if info.get("role") == "admin" else "👤"}</span>'
+                f'<span style="color:#ffffff;font-size:0.82rem;font-weight:600;">{info.get("name", un)}</span>'
+                f'<span style="color:#3a6a7a;font-size:0.74rem;">@{un}</span>'
+                f'<span style="font-size:0.62rem;color:{role_col};font-weight:700;'
+                f'letter-spacing:0.08em;text-transform:uppercase;">{info.get("role","viewer")}</span>'
+                f'{new_badge}'
+                f'<span style="margin-left:auto;color:#2a4a5a;font-size:0.7rem;">{age_str}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+
+_live_stats()
 st.divider()
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
@@ -607,10 +668,11 @@ with tab_users_tab:
         else:
             pw_hash = bcrypt.hashpw(new_pw.encode(), bcrypt.gensalt(12)).decode()
             config["credentials"]["usernames"][un] = {
-                "name":     new_name.strip(),
-                "email":    new_email.strip(),
-                "password": pw_hash,
-                "role":     new_role,
+                "name":       new_name.strip(),
+                "email":      new_email.strip(),
+                "password":   pw_hash,
+                "role":       new_role,
+                "created_at": time.time(),
             }
             _save(config)
             st.cache_data.clear()

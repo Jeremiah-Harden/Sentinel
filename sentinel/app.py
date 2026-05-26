@@ -374,10 +374,11 @@ if not st.session_state.get("authenticated"):
                 else:
                     pw_hash = bcrypt.hashpw(reg_pw.encode(), bcrypt.gensalt(12)).decode()
                     config["credentials"]["usernames"][un] = {
-                        "name":     reg_display.strip(),
-                        "email":    reg_email.strip(),
-                        "password": pw_hash,
-                        "role":     "viewer",
+                        "name":       reg_display.strip(),
+                        "email":      reg_email.strip(),
+                        "password":   pw_hash,
+                        "role":       "viewer",
+                        "created_at": time.time(),
                     }
                     _save_config(config)
                     dname  = reg_display.strip()
