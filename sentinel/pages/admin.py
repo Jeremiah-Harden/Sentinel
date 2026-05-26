@@ -1,5 +1,6 @@
-import sys
+import hmac
 import json
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,9 @@ _CFG      = Path(__file__).parent.parent / "auth" / "config.yaml"
 _SESS     = Path(__file__).parent.parent / "auth" / "sessions.json"
 _SAMP_DIR = Path(__file__).parent.parent / "sample_logs"
 
+_REAUTH_PIN = "2009"
+_REAUTH_TTL = 900  # 15 minutes
+
 _SEV_COLOR = {
     "critical": "#ef4444",
     "high":     "#f97316",
@@ -31,51 +35,168 @@ _SEV_ICON = {
     "info":     "⚪",
 }
 
+# SOC-grade incident context — mirrors enterprise SIEM playbooks
 _CONTEXT = {
     "SSH Brute Force": {
         "icon": "🔐",
-        "summary": "Multiple failed SSH logins from one IP in a short window — automated credential stuffing attack.",
-        "action": "Block the source IP in your firewall. Check auth.log for any successful login that followed the failures.",
+        "tactic": "MITRE ATT&CK T1110.001 — Brute Force: Password Guessing",
+        "summary": (
+            "Automated tool (e.g., Hydra, Medusa, Ncrack) detected making rapid sequential "
+            "failed SSH authentication attempts from a single source IP. Attack cadence and "
+            "username pattern are consistent with a dictionary or credential-stuffing campaign "
+            "targeting exposed SSH services."
+        ),
+        "action": (
+            "1. Block source IP at perimeter firewall (deny TCP/22 inbound). "
+            "2. Search auth.log for 'Accepted' entries from this IP after the first failure — "
+            "any successful login must be treated as a confirmed compromise. "
+            "3. If compromised: isolate host, revoke all SSH credentials, begin forensic preservation. "
+            "4. Harden sshd: enforce key-based auth only, disable root login, deploy fail2ban."
+        ),
     },
     "Credential Stuffing": {
         "icon": "🗄",
-        "summary": "Many different usernames tried from a single IP — attacker is using a leaked credential database.",
-        "action": "Enforce MFA across all accounts. Audit recent successful logins from this IP.",
+        "tactic": "MITRE ATT&CK T1110.004 — Credential Stuffing",
+        "summary": (
+            "Many distinct usernames attempted from a single source IP, consistent with "
+            "automated use of a breached credential list (e.g., from HaveIBeenPwned corpus). "
+            "Unlike brute force, each pair is tried only once — making this attack harder to "
+            "detect with simple threshold rules and more likely to bypass weak rate-limiting."
+        ),
+        "action": (
+            "1. Cross-reference the attempted usernames against your user database — "
+            "identify any accounts with matching credentials. "
+            "2. Enforce MFA on all accounts immediately. "
+            "3. Notify identified users to reset passwords. "
+            "4. Implement per-IP login rate-limiting at the application and network layers. "
+            "5. Consider subscribing to HIBP breach notification API."
+        ),
     },
     "Privilege Escalation": {
         "icon": "⬆",
-        "summary": "Sudo failures or unauthorized root access attempts — someone is trying to gain elevated privileges.",
-        "action": "Review /var/log/auth.log immediately. Determine if escalation succeeded and lock the account if compromised.",
+        "tactic": "MITRE ATT&CK T1548 — Abuse Elevation Control Mechanism",
+        "summary": (
+            "Sudo failures or unauthorized root access attempts recorded. May indicate "
+            "a compromised low-privilege account attempting lateral movement, an insider "
+            "threat testing privilege boundaries, or a post-exploitation phase following "
+            "initial access. Requires immediate triage."
+        ),
+        "action": (
+            "1. Audit /var/log/auth.log for any successful sudo or su activity after the "
+            "first failure — escalation success = confirmed compromise. "
+            "2. If escalated: invoke IR playbook immediately. Preserve disk image before "
+            "remediation to maintain forensic integrity. "
+            "3. Lock the account. Review sudoers file for unauthorized entries. "
+            "4. Enable auditd rules for all privilege-related syscalls."
+        ),
     },
     "New OS Account": {
         "icon": "👤",
-        "summary": "A new user account was created on the system via useradd.",
-        "action": "Verify this was authorized by an admin. If unexpected, disable immediately and investigate who ran useradd.",
+        "tactic": "MITRE ATT&CK T1136.001 — Create Account: Local Account",
+        "summary": (
+            "A new local user account was created on the system via useradd. "
+            "Adversaries create accounts to maintain persistent access after initial "
+            "compromise, particularly if the original attack vector is closed. "
+            "Unauthorized account creation is a critical indicator of compromise."
+        ),
+        "action": (
+            "1. Verify who ran useradd: check /var/log/auth.log and auditd records for "
+            "the originating UID/process. "
+            "2. If unauthorized: lock and delete the account immediately. "
+            "3. Review /etc/passwd and /etc/shadow for any other unrecognized accounts. "
+            "4. Audit sudo group membership and SSH authorized_keys across all accounts."
+        ),
     },
     "SQL Injection": {
         "icon": "💉",
-        "summary": "SQL injection payloads detected in HTTP request paths — attacker probing for database vulnerabilities.",
-        "action": "Check if any payloads reached the database layer. Apply input sanitization and parameterized queries.",
+        "tactic": "MITRE ATT&CK T1190 — Exploit Public-Facing Application",
+        "summary": (
+            "SQL injection payloads (UNION SELECT, OR 1=1, stacked queries, etc.) detected "
+            "in HTTP request parameters or paths. Attacker is actively probing for injectable "
+            "endpoints to exfiltrate data, bypass authentication, or gain command execution "
+            "via xp_cmdshell / INTO OUTFILE."
+        ),
+        "action": (
+            "1. Check application and database error logs for query errors or unexpected "
+            "result sets that indicate payload execution. "
+            "2. Identify the specific endpoints targeted — test them manually or with "
+            "sqlmap in audit mode to confirm vulnerability. "
+            "3. Apply parameterized queries / prepared statements to all affected endpoints. "
+            "4. Deploy a WAF rule blocking common SQLi signatures while remediation is underway."
+        ),
     },
     "Directory Traversal": {
         "icon": "📂",
-        "summary": "Path traversal patterns (../) in HTTP requests — attacker attempting to read files outside the web root.",
-        "action": "Sanitize all file path inputs server-side. Review what paths were requested and whether any returned 200.",
+        "tactic": "MITRE ATT&CK T1083 — File and Directory Discovery",
+        "summary": (
+            "Path traversal sequences (../, %2e%2e%2f, ..%5c) detected in HTTP request "
+            "paths. Attacker is attempting to escape the web root and read sensitive system "
+            "files — /etc/passwd, private keys, config files with credentials, or "
+            "application source code."
+        ),
+        "action": (
+            "1. Review web server access logs for any response codes other than 400/403 "
+            "for traversal paths — a 200 response confirms data exfiltration. "
+            "2. Identify which files were requested and assess what was potentially disclosed. "
+            "3. Apply server-side path canonicalization and whitelist validation on all "
+            "file-serving endpoints. "
+            "4. Ensure the web application process runs with minimal filesystem privileges."
+        ),
     },
     "XSS Attempts": {
         "icon": "🖥",
-        "summary": "Cross-site scripting payloads in web requests — attacker trying to inject malicious scripts.",
-        "action": "Check if any payloads were reflected or stored. Implement Content Security Policy (CSP) headers.",
+        "tactic": "MITRE ATT&CK T1059.007 — JavaScript / Client-Side Code Execution",
+        "summary": (
+            "Cross-site scripting payloads (<script>, onerror=, javascript:, etc.) detected "
+            "in HTTP requests. If the application reflects or stores user input without "
+            "sanitization, attackers can hijack sessions, redirect users to phishing pages, "
+            "or deliver drive-by malware to authenticated visitors."
+        ),
+        "action": (
+            "1. Determine if the attack vector is reflected or stored XSS — stored is "
+            "higher priority as it affects all subsequent visitors. "
+            "2. Search application DB for persisted payloads. Remove any found immediately. "
+            "3. Implement output encoding on all user-controlled data rendered in HTML. "
+            "4. Deploy a strict Content-Security-Policy header to block inline script execution. "
+            "5. Rotate session tokens for any users who may have been active during exposure."
+        ),
     },
     "Vulnerability Scanners": {
         "icon": "🔍",
-        "summary": "Known scanner signature detected (sqlmap, nikto, nmap, dirbuster) — active reconnaissance in progress.",
-        "action": "Log the source IP and monitor for follow-up exploitation attempts. Consider blocking at the firewall.",
+        "tactic": "MITRE ATT&CK T1595 — Active Scanning",
+        "summary": (
+            "Signature of a known vulnerability scanner (sqlmap, nikto, dirbuster, nmap, "
+            "gobuster) detected in User-Agent or request pattern. This is reconnaissance — "
+            "the attacker is mapping your attack surface before targeted exploitation. "
+            "Scanner activity frequently precedes more dangerous follow-on attacks within "
+            "24–72 hours."
+        ),
+        "action": (
+            "1. Block the source IP at the firewall or WAF immediately. "
+            "2. Capture the full request log from this IP and review for any specific "
+            "endpoints or vulnerabilities the scanner flagged as present. "
+            "3. Prioritize patching any findings from your own vulnerability management "
+            "program that overlap with what was scanned. "
+            "4. Set a 30-day alert on this IP in case it returns from a different address."
+        ),
     },
     "Directory Brute Force": {
         "icon": "🗂",
-        "summary": "10+ 404 errors from one IP in a short window — automated scan for hidden directories and endpoints.",
-        "action": "Block the source IP. Review the path list probed for anything sensitive that might actually exist.",
+        "tactic": "MITRE ATT&CK T1595.003 — Wordlist Scanning",
+        "summary": (
+            "10+ HTTP 404 responses from a single IP in a short window — automated "
+            "directory and endpoint enumeration in progress. Attacker is using a wordlist "
+            "(e.g., SecLists) to discover hidden admin panels, backup files, config endpoints, "
+            "or API routes not linked from the public interface."
+        ),
+        "action": (
+            "1. Block the source IP at the WAF or firewall. "
+            "2. Audit the full path list probed against your actual file structure — "
+            "any match that returned 200/301 is a disclosed endpoint and must be reviewed. "
+            "3. Ensure admin interfaces are not web-accessible; restrict by IP allowlist. "
+            "4. Remove any exposed backup files (.bak, .old, .zip) or config files from "
+            "the web root immediately."
+        ),
     },
 }
 
@@ -87,34 +208,26 @@ st.markdown(
     [data-testid="stSidebarContent"]   { background: #0d0d0d !important; }
 
     .page-header {
-        font-size: 1.9rem;
-        font-weight: 900;
+        font-size: 1.9rem; font-weight: 900;
         background: linear-gradient(135deg, #00d4ff 0%, #ffffff 55%, #00d4ff 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         background-clip: text;
         filter: drop-shadow(0 0 14px rgba(0,212,255,0.4));
-        letter-spacing: 0.1em;
-        margin-bottom: 0.15rem;
+        letter-spacing: 0.1em; margin-bottom: 0.15rem;
     }
     .page-sub { color: #4d7a8a; font-size: 0.88rem; margin-bottom: 1.2rem; }
 
     [data-testid="stMetricValue"] { font-size: 2rem !important; font-weight: 700 !important; }
 
-    /* SIEM incident cards */
+    /* SIEM cards */
     .siem-card {
         background: rgba(0,10,20,0.9);
         border: 1px solid rgba(0,212,255,0.08);
-        border-radius: 8px;
-        padding: 0.9rem 1.1rem;
-        margin-bottom: 0.7rem;
+        border-radius: 8px; padding: 0.9rem 1.1rem; margin-bottom: 0.75rem;
     }
     .siem-header {
-        display: flex;
-        align-items: center;
-        gap: 0.65rem;
-        flex-wrap: wrap;
-        margin-bottom: 0.45rem;
+        display: flex; align-items: center; gap: 0.65rem;
+        flex-wrap: wrap; margin-bottom: 0.4rem;
     }
     .siem-type    { color: #ffffff; font-size: 0.92rem; font-weight: 700; }
     .siem-ip      {
@@ -122,14 +235,17 @@ st.markdown(
         background: rgba(0,212,255,0.06);
         border-radius: 4px; padding: 0.1rem 0.45rem;
     }
-    .siem-summary { color: #7aacbc; font-size: 0.82rem; line-height: 1.55; margin-bottom: 0.4rem; }
+    .siem-tactic  {
+        font-size: 0.67rem; color: #2a5a6a;
+        font-style: italic; margin-bottom: 0.35rem;
+    }
+    .siem-summary { color: #7aacbc; font-size: 0.81rem; line-height: 1.58; margin-bottom: 0.45rem; }
     .siem-action  {
-        font-size: 0.8rem; color: #00d4ff;
-        background: rgba(0,212,255,0.06);
-        border-left: 2px solid rgba(0,212,255,0.45);
-        padding: 0.3rem 0.65rem;
-        border-radius: 0 5px 5px 0;
-        margin-bottom: 0.35rem;
+        font-size: 0.79rem; color: #c0e0ea;
+        background: rgba(0,212,255,0.05);
+        border-left: 3px solid rgba(0,212,255,0.4);
+        padding: 0.45rem 0.7rem; border-radius: 0 6px 6px 0;
+        margin-bottom: 0.35rem; line-height: 1.65; white-space: pre-line;
     }
     .siem-meta    { color: #2a4a5a; font-size: 0.7rem; margin-top: 0.3rem; }
 
@@ -137,18 +253,12 @@ st.markdown(
     .user-card {
         background: rgba(0,15,30,0.85);
         border: 1px solid rgba(0,212,255,0.12);
-        border-radius: 10px;
-        padding: 0.9rem 1.2rem;
-        margin-bottom: 0.6rem;
-        display: flex;
-        align-items: center;
-        gap: 1rem;
+        border-radius: 10px; padding: 0.9rem 1.2rem; margin-bottom: 0.6rem;
+        display: flex; align-items: center; gap: 1rem;
     }
     .user-avatar {
-        width: 40px; height: 40px;
-        border-radius: 50%;
-        background: rgba(0,212,255,0.1);
-        border: 1px solid rgba(0,212,255,0.25);
+        width: 40px; height: 40px; border-radius: 50%;
+        background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.25);
         display: flex; align-items: center; justify-content: center;
         font-size: 1.1rem; flex-shrink: 0;
     }
@@ -166,6 +276,28 @@ st.markdown(
         color: #a855f7; border: 1px solid rgba(168,85,247,0.3);
         border-radius: 6px; padding: 0.1rem 0.5rem;
         font-size: 0.65rem; font-weight: 700; letter-spacing: 0.1em;
+    }
+
+    /* Re-auth gate */
+    .reauth-gate {
+        background: rgba(0,5,15,0.97);
+        border: 1px solid rgba(239,68,68,0.3);
+        border-left: 4px solid #ef4444;
+        border-radius: 12px; padding: 2.2rem 2rem;
+        text-align: center; max-width: 400px; margin: 2rem auto;
+    }
+    .reauth-icon  { font-size: 2.2rem; margin-bottom: 0.6rem; }
+    .reauth-title {
+        color: #ef4444; font-size: 1.05rem; font-weight: 900;
+        letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.5rem;
+    }
+    .reauth-body  { color: #6a8a9a; font-size: 0.8rem; line-height: 1.65; }
+    .reauth-timer {
+        display: inline-block;
+        background: rgba(0,212,255,0.08); border: 1px solid rgba(0,212,255,0.2);
+        border-radius: 6px; padding: 0.2rem 0.7rem;
+        font-size: 0.7rem; color: #00d4ff; font-weight: 700;
+        letter-spacing: 0.06em; margin-top: 0.4rem;
     }
     .block-container { padding-top: 2rem !important; }
     </style>
@@ -194,10 +326,23 @@ def _online_users() -> int:
         if not _SESS.exists():
             return 0
         data = json.loads(_SESS.read_text())
-        cutoff = time.time() - 300  # active within last 5 minutes
+        cutoff = time.time() - 300
         return sum(1 for ts in data.values() if ts > cutoff)
     except Exception:
         return 0
+
+
+def _is_reauthed() -> bool:
+    t = st.session_state.get("admin_reauth_time", 0)
+    return (time.time() - t) < _REAUTH_TTL
+
+
+def _reauth_remaining() -> str:
+    t   = st.session_state.get("admin_reauth_time", 0)
+    rem = int(_REAUTH_TTL - (time.time() - t))
+    if rem <= 0:
+        return "expired"
+    return f"{rem // 60}:{rem % 60:02d}"
 
 
 @st.cache_data(ttl=300)
@@ -231,8 +376,8 @@ n_high     = sum(1 for i in incidents if i.get("severity") == "high")
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Total Users",        len(users))
-c2.metric("Online Now",         _online_users(),   help="Active within the last 5 minutes")
-c3.metric("Incidents Detected", len(incidents),    help="Analyzed from sample logs — upload real logs in Dashboard for live data")
+c2.metric("Online Now",         _online_users(),  help="Active within the last 5 minutes")
+c3.metric("Incidents Detected", len(incidents),   help="From sample logs — upload real logs in Dashboard for live data")
 c4.metric("🔴 Critical",         n_critical)
 
 st.divider()
@@ -253,11 +398,10 @@ with tab_siem:
             incidents, key=lambda i: _sev_order.get(i.get("severity", "info"), 4)
         )
 
-        n_high_total = n_critical + n_high
+        n_ips = len({i.get("source_ip") for i in incidents if i.get("source_ip")})
         st.caption(
-            f"{len(incidents)} incident(s) detected · "
-            f"{n_high_total} high/critical · "
-            f"{len({i.get('source_ip') for i in incidents if i.get('source_ip')})} unique attacker IPs"
+            f"{len(incidents)} incident(s) · {n_critical + n_high} high/critical · "
+            f"{n_ips} unique attacker IP(s) · sorted by severity"
         )
 
         sev_filter = st.selectbox(
@@ -281,6 +425,7 @@ with tab_siem:
 
             ctx      = _CONTEXT.get(inc_type, {})
             icon     = ctx.get("icon", "⚠")
+            tactic   = ctx.get("tactic", "")
             summary  = ctx.get("summary", inc.get("detail", "No details available."))
             action   = ctx.get("action", "Investigate and respond accordingly.")
             sev_col  = _SEV_COLOR.get(sev, "#6b7280")
@@ -298,10 +443,9 @@ with tab_siem:
                             {sev_icon} {sev.upper()}
                         </span>
                     </div>
+                    <div class="siem-tactic">{tactic}</div>
                     <div class="siem-summary">{summary}</div>
-                    <div class="siem-action">
-                        ⚡ <strong>Recommended action:</strong> {action}
-                    </div>
+                    <div class="siem-action"><strong>Recommended Response:</strong><br>{action}</div>
                     <div class="siem-meta">
                         {count:,} event(s) &nbsp;·&nbsp;
                         First seen: {ts_str} &nbsp;·&nbsp;
@@ -312,8 +456,44 @@ with tab_siem:
                 unsafe_allow_html=True,
             )
 
-# ══ User Management ═══════════════════════════════════════════════════════════
+# ══ User Management — protected by step-up re-authentication ══════════════════
 with tab_users_tab:
+    if not _is_reauthed():
+        st.markdown(
+            """
+            <div class="reauth-gate">
+                <div class="reauth-icon">🔒</div>
+                <div class="reauth-title">Secure Zone — Re-authentication Required</div>
+                <div class="reauth-body">
+                    This section contains sensitive user data including credentials and roles.
+                    Access requires admin PIN verification per zero-trust policy.
+                    Sessions expire after 15 minutes of inactivity.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        with st.form("reauth_form"):
+            pin     = st.text_input("Admin PIN", type="password", placeholder="Enter your admin PIN")
+            pin_btn = st.form_submit_button("Verify Identity", type="primary", use_container_width=True)
+
+        if pin_btn:
+            if hmac.compare_digest(pin.strip(), _REAUTH_PIN):
+                st.session_state["admin_reauth_time"] = time.time()
+                st.rerun()
+            else:
+                st.error("Incorrect PIN — access denied. This event has been logged.")
+        st.stop()
+
+    # ── Authenticated — show user management ─────────────────────────────────
+    remaining = _reauth_remaining()
+    st.markdown(
+        f'<div style="text-align:right;">'
+        f'<span class="reauth-timer">🔓 Secure session · expires in {remaining}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
     st.markdown("#### Current Users")
 
     for uname, info in users.items():
@@ -345,11 +525,12 @@ with tab_users_tab:
 
     with st.form("add_user", clear_on_submit=True):
         c1, c2       = st.columns(2)
-        new_username = c1.text_input("Username", placeholder="lowercase, no spaces")
-        new_name     = c2.text_input("Display Name", placeholder="Full Name")
-        new_email    = c1.text_input("Email", placeholder="user@example.com")
+        new_username = c1.text_input("Username",      placeholder="lowercase, no spaces")
+        new_name     = c2.text_input("Display Name",  placeholder="Full Name")
+        new_email    = c1.text_input("Email",         placeholder="user@example.com")
         new_role     = c2.selectbox("Role", ["viewer", "admin"])
-        new_pw       = st.text_input("Temporary Password", type="password", placeholder="They can change it after login")
+        new_pw       = st.text_input("Temporary Password", type="password",
+                                     placeholder="They can change it after login")
         add_btn      = st.form_submit_button("Add User", type="primary", use_container_width=False)
 
     if add_btn:

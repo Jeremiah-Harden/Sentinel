@@ -1,5 +1,7 @@
 import base64
+import hmac
 import json
+import random
 import time
 from pathlib import Path
 
@@ -64,6 +66,11 @@ def _ping_session(username: str) -> None:
         pass
 
 
+def _new_captcha(prefix: str = "") -> None:
+    st.session_state[f"{prefix}captcha_a"] = random.randint(2, 15)
+    st.session_state[f"{prefix}captcha_b"] = random.randint(2, 15)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # LOGIN PAGE — shown when not authenticated
 # ══════════════════════════════════════════════════════════════════════════════
@@ -76,8 +83,8 @@ if not st.session_state.get("authenticated"):
         section[data-testid="stSidebar"]   { display: none !important; }
         [data-testid="collapsedControl"]   { display: none !important; }
         .main .block-container {
-            max-width: 460px !important;
-            padding: 5rem 1.5rem 2rem !important;
+            max-width: 480px !important;
+            padding: 4rem 1.5rem 2rem !important;
             margin: 0 auto !important;
         }
         .login-shield { font-size: 3rem; text-align: center; margin-bottom: 0.2rem; }
@@ -102,10 +109,9 @@ if not st.session_state.get("authenticated"):
             margin-top: 0.35rem;
         }
         .login-line {
-            width: 160px;
-            height: 1px;
+            width: 160px; height: 1px;
             background: linear-gradient(90deg, transparent, #00d4ff, transparent);
-            margin: 1.3rem auto 2rem;
+            margin: 1.3rem auto 1.8rem;
         }
         .login-footer {
             text-align: center;
@@ -114,7 +120,6 @@ if not st.session_state.get("authenticated"):
             margin-top: 2rem;
             letter-spacing: 0.08em;
         }
-        /* Style the form container */
         [data-testid="stForm"] {
             background: rgba(0,15,30,0.85) !important;
             border: 1px solid rgba(0,212,255,0.15) !important;
@@ -130,16 +135,32 @@ if not st.session_state.get("authenticated"):
             margin-bottom: 1.4rem;
         }
         .feat-row {
-            display: flex;
-            align-items: flex-start;
-            gap: 0.6rem;
-            padding: 0.28rem 0;
+            display: flex; align-items: flex-start;
+            gap: 0.6rem; padding: 0.28rem 0;
             border-bottom: 1px solid rgba(0,212,255,0.05);
         }
         .feat-row:last-child { border-bottom: none; }
         .feat-icon { font-size: 0.9rem; flex-shrink: 0; padding-top: 0.05rem; }
         .feat-text { color: #5a8fa0; font-size: 0.76rem; line-height: 1.45; }
         .feat-text strong { color: #00d4ff; font-weight: 700; }
+        /* CAPTCHA */
+        .captcha-box {
+            background: rgba(0,212,255,0.03);
+            border: 1px solid rgba(0,212,255,0.22);
+            border-radius: 8px;
+            padding: 0.65rem 1rem 0.5rem;
+            margin-bottom: 0.5rem;
+            text-align: center;
+        }
+        .captcha-label {
+            font-size: 0.6rem; font-weight: 700;
+            letter-spacing: 0.18em; color: #00d4ff;
+            text-transform: uppercase; margin-bottom: 0.2rem;
+        }
+        .captcha-problem {
+            font-size: 1.55rem; font-weight: 900; color: #ffffff;
+            font-family: 'Courier New', monospace; letter-spacing: 0.1em;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -172,12 +193,18 @@ if not st.session_state.get("authenticated"):
             </div>
             <div class="feat-row">
                 <span class="feat-icon">🛡</span>
-                <span class="feat-text"><strong>SOC-grade threat detection</strong> — incident reports with severity levels, timelines, and downloadable HTML reports</span>
+                <span class="feat-text"><strong>SOC-grade threat detection</strong> — incident reports with severity scoring, timelines, and downloadable HTML reports</span>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    # Initialize per-form CAPTCHA challenges
+    if "captcha_a" not in st.session_state:
+        _new_captcha("")
+    if "captcha_reg_a" not in st.session_state:
+        _new_captcha("captcha_reg_")
 
     config = _load_config()
 
@@ -185,13 +212,31 @@ if not st.session_state.get("authenticated"):
 
     # ── Log In ────────────────────────────────────────────────────────────────
     with tab_login:
+        _ca = st.session_state["captcha_a"]
+        _cb = st.session_state["captcha_b"]
         with st.form("login_form", clear_on_submit=False):
             username_input = st.text_input("Username", placeholder="Enter your username")
             password_input = st.text_input("Password", type="password", placeholder="Enter your password")
+            st.markdown(
+                f'<div class="captcha-box">'
+                f'<div class="captcha-label">🤖 Human Verification — solve to continue</div>'
+                f'<div class="captcha-problem">{_ca} + {_cb} = ?</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            captcha_login = st.text_input("Answer", placeholder="Type the number", key="cap_login")
             submitted = st.form_submit_button("Log In", use_container_width=True, type="primary")
 
         if submitted:
-            if _check_password(username_input, password_input, config):
+            try:
+                cap_ok = int(captcha_login.strip()) == _ca + _cb
+            except (ValueError, TypeError):
+                cap_ok = False
+
+            if not cap_ok:
+                _new_captcha("")
+                st.error("Human verification failed — a new equation has been generated, try again.")
+            elif _check_password(username_input, password_input, config):
                 info = _user_info(username_input, config)
                 st.session_state["authenticated"] = True
                 st.session_state["username"]      = username_input.strip().lower()
@@ -199,50 +244,70 @@ if not st.session_state.get("authenticated"):
                 st.session_state["role"]          = info.get("role", "viewer")
                 st.rerun()
             else:
+                _new_captcha("")
                 st.error("Incorrect username or password — check caps lock and try again.")
 
     # ── Create Account ────────────────────────────────────────────────────────
     with tab_register:
+        _ra = st.session_state["captcha_reg_a"]
+        _rb = st.session_state["captcha_reg_b"]
         with st.form("register_form", clear_on_submit=True):
-            reg_display  = st.text_input("Full Name", placeholder="Your name")
-            reg_username = st.text_input("Username", placeholder="lowercase, no spaces")
-            reg_email    = st.text_input("Email (optional)", placeholder="you@example.com")
-            reg_pw       = st.text_input("Password", type="password", placeholder="At least 8 characters")
-            reg_pw2      = st.text_input("Confirm Password", type="password", placeholder="Repeat your password")
-            reg_btn      = st.form_submit_button("Create Account", use_container_width=True, type="primary")
+            reg_display  = st.text_input("Full Name",         placeholder="Your name")
+            reg_username = st.text_input("Username",          placeholder="lowercase, no spaces")
+            reg_email    = st.text_input("Email (optional)",  placeholder="you@example.com")
+            reg_pw       = st.text_input("Password",          type="password", placeholder="At least 8 characters")
+            reg_pw2      = st.text_input("Confirm Password",  type="password", placeholder="Repeat your password")
+            st.markdown(
+                f'<div class="captcha-box">'
+                f'<div class="captcha-label">🤖 Human Verification — solve to continue</div>'
+                f'<div class="captcha-problem">{_ra} + {_rb} = ?</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            captcha_reg = st.text_input("Answer", placeholder="Type the number", key="cap_reg")
+            reg_btn     = st.form_submit_button("Create Account", use_container_width=True, type="primary")
 
         if reg_btn:
-            un  = reg_username.strip().lower()
-            err = None
-            if not reg_display.strip():
-                err = "Full name is required."
-            elif not un:
-                err = "Username is required."
-            elif not un.replace("_", "").replace("-", "").isalnum():
-                err = "Username can only contain letters, numbers, hyphens, and underscores."
-            elif un in config["credentials"]["usernames"]:
-                err = f"Username '{un}' is already taken — choose another."
-            elif len(reg_pw) < 8:
-                err = "Password must be at least 8 characters."
-            elif reg_pw != reg_pw2:
-                err = "Passwords do not match."
+            try:
+                reg_cap_ok = int(captcha_reg.strip()) == _ra + _rb
+            except (ValueError, TypeError):
+                reg_cap_ok = False
 
-            if err:
-                st.error(err)
+            if not reg_cap_ok:
+                _new_captcha("captcha_reg_")
+                st.error("Human verification failed — a new equation has been generated, try again.")
             else:
-                pw_hash = bcrypt.hashpw(reg_pw.encode(), bcrypt.gensalt(12)).decode()
-                config["credentials"]["usernames"][un] = {
-                    "name":     reg_display.strip(),
-                    "email":    reg_email.strip(),
-                    "password": pw_hash,
-                    "role":     "viewer",
-                }
-                _save_config(config)
-                st.session_state["authenticated"] = True
-                st.session_state["username"]      = un
-                st.session_state["display_name"]  = reg_display.strip()
-                st.session_state["role"]          = "viewer"
-                st.rerun()
+                un  = reg_username.strip().lower()
+                err = None
+                if not reg_display.strip():
+                    err = "Full name is required."
+                elif not un:
+                    err = "Username is required."
+                elif not un.replace("_", "").replace("-", "").isalnum():
+                    err = "Username may only contain letters, numbers, hyphens, and underscores."
+                elif un in config["credentials"]["usernames"]:
+                    err = f"Username '{un}' is already taken — choose another."
+                elif len(reg_pw) < 8:
+                    err = "Password must be at least 8 characters."
+                elif reg_pw != reg_pw2:
+                    err = "Passwords do not match."
+
+                if err:
+                    st.error(err)
+                else:
+                    pw_hash = bcrypt.hashpw(reg_pw.encode(), bcrypt.gensalt(12)).decode()
+                    config["credentials"]["usernames"][un] = {
+                        "name":     reg_display.strip(),
+                        "email":    reg_email.strip(),
+                        "password": pw_hash,
+                        "role":     "viewer",
+                    }
+                    _save_config(config)
+                    st.session_state["authenticated"] = True
+                    st.session_state["username"]      = un
+                    st.session_state["display_name"]  = reg_display.strip()
+                    st.session_state["role"]          = "viewer"
+                    st.rerun()
 
     st.markdown(
         '<div class="login-footer">Sentinel v1.0 · Jeremiah Harden · Kennesaw State University</div>',
@@ -319,7 +384,6 @@ with st.sidebar:
 
     st.divider()
 
-    # Logged-in user badge
     st.markdown(
         f"""
         <div style="background:rgba(0,212,255,0.07);border:1px solid rgba(0,212,255,0.18);
@@ -337,7 +401,11 @@ with st.sidebar:
     )
 
     if st.button("Log Out", use_container_width=True):
-        for key in ["authenticated", "username", "display_name", "role"]:
+        for key in [
+            "authenticated", "username", "display_name", "role",
+            "captcha_a", "captcha_b", "captcha_reg_a", "captcha_reg_b",
+            "admin_reauth_time",
+        ]:
             st.session_state.pop(key, None)
         st.rerun()
 
@@ -351,7 +419,7 @@ pages = [
 ]
 
 if _role == "admin":
-    pages.append(st.Page("pages/admin.py", title="Users", icon="👥"))
+    pages.append(st.Page("pages/admin.py", title="Admin", icon="⚙"))
 
 pg = st.navigation(pages, position="sidebar")
 pg.run()
