@@ -35,23 +35,41 @@ _SEV_ICON = {
     "info":     "⚪",
 }
 
-# SOC-grade incident context — mirrors enterprise SIEM playbooks
+# SOC-grade incident context — keys match exact type strings from tools/detect.py
 _CONTEXT = {
-    "SSH Brute Force": {
+    "Brute Force": {
         "icon": "🔐",
         "tactic": "MITRE ATT&CK T1110.001 — Brute Force: Password Guessing",
         "summary": (
-            "Automated tool (e.g., Hydra, Medusa, Ncrack) detected making rapid sequential "
-            "failed SSH authentication attempts from a single source IP. Attack cadence and "
-            "username pattern are consistent with a dictionary or credential-stuffing campaign "
-            "targeting exposed SSH services."
+            "Automated tool (e.g., Hydra, Medusa, Ncrack) making rapid sequential failed "
+            "authentication attempts from a single source IP. Attack cadence and username "
+            "pattern are consistent with a dictionary or credential-stuffing campaign "
+            "targeting exposed login services."
         ),
         "action": (
-            "1. Block source IP at perimeter firewall (deny TCP/22 inbound). "
+            "1. Block source IP at perimeter firewall immediately.\n"
             "2. Search auth.log for 'Accepted' entries from this IP after the first failure — "
-            "any successful login must be treated as a confirmed compromise. "
-            "3. If compromised: isolate host, revoke all SSH credentials, begin forensic preservation. "
-            "4. Harden sshd: enforce key-based auth only, disable root login, deploy fail2ban."
+            "any successful login must be treated as a confirmed compromise.\n"
+            "3. If compromised: isolate host, revoke all credentials, begin forensic preservation.\n"
+            "4. Harden login services: enforce MFA, deploy fail2ban or equivalent rate-limiting."
+        ),
+    },
+    "Account Lockout / Brute Force": {
+        "icon": "🔐",
+        "tactic": "MITRE ATT&CK T1110 — Brute Force",
+        "summary": (
+            "Repeated authentication failures have triggered an account lockout policy or "
+            "firewall rule. An automated tool is systematically testing credentials against "
+            "one or more accounts. Lockout policies are a deterrent, not a defense — "
+            "the attack is still in progress from the network perspective."
+        ),
+        "action": (
+            "1. Identify the locked account(s) and source IP from auth logs.\n"
+            "2. Block the source IP at the firewall — the attack continues even if the "
+            "account is locked.\n"
+            "3. Review whether any login attempt succeeded before the lockout triggered.\n"
+            "4. Notify the account owner; verify their credentials have not been compromised "
+            "via HaveIBeenPwned."
         ),
     },
     "Credential Stuffing": {
@@ -59,51 +77,66 @@ _CONTEXT = {
         "tactic": "MITRE ATT&CK T1110.004 — Credential Stuffing",
         "summary": (
             "Many distinct usernames attempted from a single source IP, consistent with "
-            "automated use of a breached credential list (e.g., from HaveIBeenPwned corpus). "
-            "Unlike brute force, each pair is tried only once — making this attack harder to "
-            "detect with simple threshold rules and more likely to bypass weak rate-limiting."
+            "automated use of a breached credential list. Unlike brute force, each pair is "
+            "tried only once — making this harder to detect with simple threshold rules and "
+            "more likely to bypass weak rate-limiting."
         ),
         "action": (
-            "1. Cross-reference the attempted usernames against your user database — "
-            "identify any accounts with matching credentials. "
-            "2. Enforce MFA on all accounts immediately. "
-            "3. Notify identified users to reset passwords. "
-            "4. Implement per-IP login rate-limiting at the application and network layers. "
-            "5. Consider subscribing to HIBP breach notification API."
+            "1. Cross-reference attempted usernames against your user database to identify "
+            "accounts with matching credentials.\n"
+            "2. Enforce MFA across all accounts immediately.\n"
+            "3. Notify identified users to reset passwords.\n"
+            "4. Implement per-IP login rate-limiting at the application and network layers.\n"
+            "5. Subscribe to HIBP breach notification API to get ahead of future exposures."
+        ),
+    },
+    "Privilege Escalation Attempt": {
+        "icon": "⬆",
+        "tactic": "MITRE ATT&CK T1548 — Abuse Elevation Control Mechanism",
+        "summary": (
+            "Sudo authentication failure recorded. A user or process attempted to gain "
+            "elevated privileges without authorization. May indicate a compromised "
+            "low-privilege account probing for lateral movement, or an insider threat "
+            "testing privilege boundaries."
+        ),
+        "action": (
+            "1. Audit /var/log/auth.log for any successful sudo or su activity after the "
+            "failure — escalation success = confirmed compromise.\n"
+            "2. If escalated: invoke IR playbook. Preserve disk image before remediation.\n"
+            "3. Lock the account and review sudoers file for unauthorized entries.\n"
+            "4. Enable auditd rules for all privilege-related syscalls going forward."
         ),
     },
     "Privilege Escalation": {
         "icon": "⬆",
         "tactic": "MITRE ATT&CK T1548 — Abuse Elevation Control Mechanism",
         "summary": (
-            "Sudo failures or unauthorized root access attempts recorded. May indicate "
-            "a compromised low-privilege account attempting lateral movement, an insider "
-            "threat testing privilege boundaries, or a post-exploitation phase following "
-            "initial access. Requires immediate triage."
+            "A privilege escalation event was detected in structured application logs. "
+            "This may indicate a confirmed escalation rather than merely an attempt — "
+            "treat as high priority until triage confirms otherwise."
         ),
         "action": (
-            "1. Audit /var/log/auth.log for any successful sudo or su activity after the "
-            "first failure — escalation success = confirmed compromise. "
-            "2. If escalated: invoke IR playbook immediately. Preserve disk image before "
-            "remediation to maintain forensic integrity. "
-            "3. Lock the account. Review sudoers file for unauthorized entries. "
-            "4. Enable auditd rules for all privilege-related syscalls."
+            "1. Immediately determine if the escalation succeeded — check audit logs for "
+            "root-level command execution after the event.\n"
+            "2. If confirmed: invoke IR playbook, isolate the affected system.\n"
+            "3. Preserve forensic evidence before remediation.\n"
+            "4. Review all privileged actions taken between escalation event and detection."
         ),
     },
-    "New OS Account": {
+    "New User Created": {
         "icon": "👤",
         "tactic": "MITRE ATT&CK T1136.001 — Create Account: Local Account",
         "summary": (
-            "A new local user account was created on the system via useradd. "
-            "Adversaries create accounts to maintain persistent access after initial "
-            "compromise, particularly if the original attack vector is closed. "
-            "Unauthorized account creation is a critical indicator of compromise."
+            "A new local user account was created on the system via useradd. Adversaries "
+            "create accounts to maintain persistent access after initial compromise, "
+            "particularly if the original attack vector is later closed. Unauthorized "
+            "account creation is a critical indicator of compromise."
         ),
         "action": (
             "1. Verify who ran useradd: check /var/log/auth.log and auditd records for "
-            "the originating UID/process. "
-            "2. If unauthorized: lock and delete the account immediately. "
-            "3. Review /etc/passwd and /etc/shadow for any other unrecognized accounts. "
+            "the originating UID/process.\n"
+            "2. If unauthorized: lock and delete the account immediately.\n"
+            "3. Review /etc/passwd and /etc/shadow for any other unrecognized accounts.\n"
             "4. Audit sudo group membership and SSH authorized_keys across all accounts."
         ),
     },
@@ -111,17 +144,17 @@ _CONTEXT = {
         "icon": "💉",
         "tactic": "MITRE ATT&CK T1190 — Exploit Public-Facing Application",
         "summary": (
-            "SQL injection payloads (UNION SELECT, OR 1=1, stacked queries, etc.) detected "
-            "in HTTP request parameters or paths. Attacker is actively probing for injectable "
-            "endpoints to exfiltrate data, bypass authentication, or gain command execution "
-            "via xp_cmdshell / INTO OUTFILE."
+            "SQL injection payloads (UNION SELECT, OR 1=1, stacked queries, time-based "
+            "blind, etc.) detected in HTTP request parameters or paths. Attacker is actively "
+            "probing for injectable endpoints to exfiltrate data, bypass authentication, or "
+            "gain OS command execution via xp_cmdshell or INTO OUTFILE."
         ),
         "action": (
             "1. Check application and database error logs for query errors or unexpected "
-            "result sets that indicate payload execution. "
-            "2. Identify the specific endpoints targeted — test them manually or with "
-            "sqlmap in audit mode to confirm vulnerability. "
-            "3. Apply parameterized queries / prepared statements to all affected endpoints. "
+            "result sets — these confirm payload execution.\n"
+            "2. Identify the specific endpoints targeted and test them with sqlmap in "
+            "audit mode to confirm exploitability.\n"
+            "3. Apply parameterized queries / prepared statements to all affected endpoints.\n"
             "4. Deploy a WAF rule blocking common SQLi signatures while remediation is underway."
         ),
     },
@@ -131,19 +164,19 @@ _CONTEXT = {
         "summary": (
             "Path traversal sequences (../, %2e%2e%2f, ..%5c) detected in HTTP request "
             "paths. Attacker is attempting to escape the web root and read sensitive system "
-            "files — /etc/passwd, private keys, config files with credentials, or "
+            "files — /etc/passwd, SSH private keys, config files with credentials, or "
             "application source code."
         ),
         "action": (
-            "1. Review web server access logs for any response codes other than 400/403 "
-            "for traversal paths — a 200 response confirms data exfiltration. "
-            "2. Identify which files were requested and assess what was potentially disclosed. "
+            "1. Review web server access logs for any 200 responses to traversal paths — "
+            "a 200 confirms data exfiltration.\n"
+            "2. Identify which files were requested and assess what was potentially disclosed.\n"
             "3. Apply server-side path canonicalization and whitelist validation on all "
-            "file-serving endpoints. "
+            "file-serving endpoints.\n"
             "4. Ensure the web application process runs with minimal filesystem privileges."
         ),
     },
-    "XSS Attempts": {
+    "XSS Attempt": {
         "icon": "🖥",
         "tactic": "MITRE ATT&CK T1059.007 — JavaScript / Client-Side Code Execution",
         "summary": (
@@ -153,31 +186,30 @@ _CONTEXT = {
             "or deliver drive-by malware to authenticated visitors."
         ),
         "action": (
-            "1. Determine if the attack vector is reflected or stored XSS — stored is "
-            "higher priority as it affects all subsequent visitors. "
-            "2. Search application DB for persisted payloads. Remove any found immediately. "
-            "3. Implement output encoding on all user-controlled data rendered in HTML. "
-            "4. Deploy a strict Content-Security-Policy header to block inline script execution. "
-            "5. Rotate session tokens for any users who may have been active during exposure."
+            "1. Determine if reflected or stored XSS — stored is higher priority as it "
+            "affects all subsequent visitors.\n"
+            "2. Search the application database for persisted payloads and remove immediately.\n"
+            "3. Implement HTML output encoding on all user-controlled data.\n"
+            "4. Deploy a strict Content-Security-Policy header to block inline script execution.\n"
+            "5. Rotate session tokens for users active during the exposure window."
         ),
     },
-    "Vulnerability Scanners": {
+    "Vulnerability Scanner": {
         "icon": "🔍",
         "tactic": "MITRE ATT&CK T1595 — Active Scanning",
         "summary": (
             "Signature of a known vulnerability scanner (sqlmap, nikto, dirbuster, nmap, "
-            "gobuster) detected in User-Agent or request pattern. This is reconnaissance — "
-            "the attacker is mapping your attack surface before targeted exploitation. "
-            "Scanner activity frequently precedes more dangerous follow-on attacks within "
-            "24–72 hours."
+            "gobuster, Burp Suite) detected in User-Agent or request pattern. This is "
+            "active reconnaissance — the attacker is mapping your attack surface before "
+            "targeted exploitation. Scanner activity frequently precedes follow-on attacks "
+            "within 24–72 hours."
         ),
         "action": (
-            "1. Block the source IP at the firewall or WAF immediately. "
-            "2. Capture the full request log from this IP and review for any specific "
-            "endpoints or vulnerabilities the scanner flagged as present. "
-            "3. Prioritize patching any findings from your own vulnerability management "
-            "program that overlap with what was scanned. "
-            "4. Set a 30-day alert on this IP in case it returns from a different address."
+            "1. Block the source IP at the firewall or WAF immediately.\n"
+            "2. Review the full request log from this IP for any endpoints the scanner "
+            "flagged as responding — these are your highest-risk assets.\n"
+            "3. Prioritize patching any vulnerabilities that overlap with what was scanned.\n"
+            "4. Set a 30-day watchlist alert on this IP in case it returns from a new address."
         ),
     },
     "Directory Brute Force": {
@@ -186,16 +218,49 @@ _CONTEXT = {
         "summary": (
             "10+ HTTP 404 responses from a single IP in a short window — automated "
             "directory and endpoint enumeration in progress. Attacker is using a wordlist "
-            "(e.g., SecLists) to discover hidden admin panels, backup files, config endpoints, "
-            "or API routes not linked from the public interface."
+            "(e.g., SecLists, DirBuster) to discover hidden admin panels, backup files, "
+            "config endpoints, or API routes not linked from the public interface."
         ),
         "action": (
-            "1. Block the source IP at the WAF or firewall. "
-            "2. Audit the full path list probed against your actual file structure — "
-            "any match that returned 200/301 is a disclosed endpoint and must be reviewed. "
-            "3. Ensure admin interfaces are not web-accessible; restrict by IP allowlist. "
+            "1. Block the source IP at the WAF or firewall.\n"
+            "2. Audit the full path list probed against your file structure — any path "
+            "that returned 200 or 301 is a disclosed endpoint requiring immediate review.\n"
+            "3. Ensure admin interfaces are not web-accessible; restrict by IP allowlist.\n"
             "4. Remove any exposed backup files (.bak, .old, .zip) or config files from "
             "the web root immediately."
+        ),
+    },
+    "Port Scan": {
+        "icon": "🌐",
+        "tactic": "MITRE ATT&CK T1046 — Network Service Discovery",
+        "summary": (
+            "A port scan was detected against this host or network segment. The attacker "
+            "is enumerating open ports and services to identify exploitable entry points — "
+            "this is a standard first step in network-based attacks and indicates an "
+            "active threat actor performing reconnaissance."
+        ),
+        "action": (
+            "1. Block the scanning IP at the perimeter firewall.\n"
+            "2. Review which ports responded and ensure no unexpected services are exposed.\n"
+            "3. Verify firewall rules match your intended exposure — close any ports that "
+            "should not be internet-facing.\n"
+            "4. Monitor for follow-on exploitation attempts from this IP or its subnet."
+        ),
+    },
+    "Unauthorized API Access": {
+        "icon": "🔑",
+        "tactic": "MITRE ATT&CK T1078 — Valid Accounts / Unauthorized Access",
+        "summary": (
+            "A request to a protected API endpoint was made without valid authentication "
+            "or authorization. This may indicate a stolen token, a misconfigured API "
+            "gateway, or an attacker probing for improperly secured endpoints."
+        ),
+        "action": (
+            "1. Identify the specific endpoint accessed and the source IP.\n"
+            "2. Determine whether the request returned a 200 — if so, data may have been "
+            "disclosed and must be treated as a breach.\n"
+            "3. Rotate any API keys or tokens that may have been exposed.\n"
+            "4. Review API gateway authentication rules and tighten authorization checks."
         ),
     },
 }
