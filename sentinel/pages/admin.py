@@ -401,11 +401,23 @@ def _online_users() -> int:
 
 
 def _is_reauthed() -> bool:
+    """Check whether the admin has completed step-up re-authentication recently.
+
+    This mirrors zero-trust policy: even though you're logged in as admin,
+    accessing sensitive user data requires a secondary PIN confirmation that
+    expires after 15 minutes. Real enterprise SIEMs (Splunk, CrowdStrike) do
+    the same for privileged actions — it limits blast radius if an admin
+    session is hijacked.
+
+    The timestamp is stored in session_state (not a file) so it's per-browser-tab
+    and automatically expires when the tab closes.
+    """
     t = st.session_state.get("admin_reauth_time", 0)
     return (time.time() - t) < _REAUTH_TTL
 
 
 def _reauth_remaining() -> str:
+    """Return a MM:SS countdown string for the re-auth session timer display."""
     t   = st.session_state.get("admin_reauth_time", 0)
     rem = int(_REAUTH_TTL - (time.time() - t))
     if rem <= 0:
@@ -415,11 +427,23 @@ def _reauth_remaining() -> str:
 
 @st.cache_data(ttl=300)
 def _load_incidents():
+    """Parse all sample .log files and run the detection engine.
+
+    @st.cache_data caches the result for 5 minutes (300s). Without this,
+    every page interaction would re-parse and re-detect on every script rerun,
+    which is slow for large log files. The cache is busted manually after any
+    user/config write via st.cache_data.clear().
+
+    Efficiency: collect file contents into a list first, then join once.
+    String concatenation in a loop (raw += text) is O(n²) because Python
+    creates a new string object on every iteration. "".join(parts) is O(n).
+    """
     if not _SAMP_DIR.exists():
         return []
-    raw = ""
+    parts = []
     for f in sorted(_SAMP_DIR.glob("*.log")):
-        raw += f.read_text(encoding="utf-8", errors="replace") + "\n"
+        parts.append(f.read_text(encoding="utf-8", errors="replace"))
+    raw = "\n".join(parts)
     if not raw.strip():
         return []
     events = parse_log_text(raw)
@@ -441,7 +465,12 @@ st.markdown(
 incidents = _load_incidents()
 
 
-# ── Live stats panel — auto-refreshes every 30 s without full page reload ──────
+# ── Live stats panel ──────────────────────────────────────────────────────────
+# @st.fragment(run_every=30) is a Streamlit 1.35+ feature that re-executes only
+# this function every 30 seconds without rerunning the entire page. This is how
+# we get a "live" dashboard — the SIEM tab and User Management tab stay stable
+# while the metrics update in the background. Without the fragment, a full rerun
+# would reset any expanded/collapsed state the admin had open.
 @st.fragment(run_every=30)
 def _live_stats() -> None:
     cfg        = _load()

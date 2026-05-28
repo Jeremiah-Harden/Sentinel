@@ -1,3 +1,22 @@
+"""
+app.py — Sentinel's main entry point.
+
+Handles authentication (login / register / logout) and sets up the
+multi-page navigation. Every page import is protected: if the user is
+not authenticated, st.stop() prevents the page from rendering.
+
+Session persistence works via HMAC-signed browser cookies (no server file):
+  - On login: create a signed cookie with make_session_cookie() and write it
+    to the browser via CookieController.
+  - On every page load: read the cookie, verify the HMAC signature, and
+    restore session state silently — so the user stays logged in across
+    refreshes AND redeploys.
+  - On logout: delete the cookie and clear session state.
+
+User data is stored in a GitHub Gist (via auth/store.py) so new registrations
+survive Streamlit Cloud redeploys (the ephemeral filesystem would wipe them).
+"""
+
 import base64
 import json
 import random
@@ -8,6 +27,7 @@ from pathlib import Path
 import bcrypt
 import streamlit as st
 
+# Add sentinel/ to path so pages can import from auth/ and tools/
 sys.path.insert(0, str(Path(__file__).parent))
 from auth.store import load_config, save_config, make_session_cookie, read_session_cookie
 
@@ -67,7 +87,11 @@ def _new_captcha(prefix: str = "captcha_") -> None:
     st.session_state[f"{prefix}b"] = random.randint(2, 15)
 
 
-# ── Cookie controller — gracefully skipped if package unavailable ──────────────
+# ── Cookie controller ─────────────────────────────────────────────────────────
+# CookieController reads/writes browser cookies. We initialize it once at the
+# top level (before any st.stop()) so it's available for both the login page
+# and the authenticated app. The try/except means the app still works if the
+# package is missing — users just won't get session persistence.
 _ctrl = None
 if _COOKIES_AVAILABLE:
     try:
@@ -76,11 +100,15 @@ if _COOKIES_AVAILABLE:
         pass
 
 # ── Restore session from cookie on page refresh / redeploy ────────────────────
+# Streamlit reruns the entire script on every page load, which would clear
+# session_state. We counter this by reading the signed session cookie and
+# reconstructing the session if it's still valid. This runs BEFORE the login
+# gate so returning users are seamlessly passed through to the app.
 if not st.session_state.get("authenticated") and _ctrl is not None:
     try:
         _saved = _ctrl.get("sentinel_session")
         if _saved:
-            _data = read_session_cookie(_saved)
+            _data = read_session_cookie(_saved)   # verifies HMAC + expiry
             if _data:
                 st.session_state["authenticated"] = True
                 st.session_state["username"]      = _data["username"]

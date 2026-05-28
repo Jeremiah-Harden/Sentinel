@@ -1,3 +1,17 @@
+"""
+dashboard.py — Main analysis dashboard for Sentinel.
+
+Workflow:
+  1. User selects sample logs or uploads their own files (sidebar).
+  2. Clicks Analyze → logs are parsed, threats detected, IPs geolocated.
+  3. Results shown across four tabs: incidents table, timeline, attack map, raw events.
+  4. HTML report available for download.
+
+The page uses st.stop() after the landing state so none of the analysis code
+runs until the user actually clicks Analyze — this prevents errors on first load
+when there are no events to process yet.
+"""
+
 import sys
 import io
 import gzip
@@ -8,7 +22,8 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-# tools/ lives in sentinel/, one level above pages/
+# pages/ is one directory below sentinel/, so we add sentinel/ to sys.path
+# so that `from tools.xxx import ...` resolves correctly from this file's location.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from tools.parse_logs import parse_log_text
 from tools.detect import run_all
@@ -54,6 +69,8 @@ with st.sidebar:
         if uploaded:
             for uf in uploaded:
                 content = uf.read()
+                # Transparently decompress .gz files — rotated Linux logs are
+                # often compressed (auth.log.1.gz, access.log.2.gz, etc.)
                 if uf.name.endswith(".gz"):
                     content = gzip.decompress(content)
                 raw_text += content.decode("utf-8", errors="replace") + "\n"
@@ -100,6 +117,9 @@ with st.spinner("Parsing logs…"):
 with st.spinner("Running detection rules…"):
     incidents = run_all(events)
 
+# Geolocation is optional — it makes network calls (ip-api.com) which adds
+# latency. The toggle lets users skip it if they just want fast local analysis.
+# We count unique IPs first so the spinner shows a meaningful number.
 if enrich_geo and incidents:
     unique_src_ips = {i["source_ip"] for i in incidents if i.get("source_ip")}
     with st.spinner(f"Geolocating {len(unique_src_ips)} IP(s)…"):
@@ -166,6 +186,8 @@ with tab_tl:
         df_t = pd.DataFrame([{
             "Incident": i["type"],
             "Start":    i["first_seen"],
+            # Incidents with no last_seen get a 5s duration so they're still
+            # visible on the timeline (a zero-width bar would be invisible)
             "End":      i.get("last_seen") or (i["first_seen"] + timedelta(seconds=5)),
             "Severity": i["severity"],
             "IP":       i.get("source_ip") or "N/A",

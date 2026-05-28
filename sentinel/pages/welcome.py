@@ -1,9 +1,26 @@
+"""
+welcome.py — Sentinel landing page.
+
+Shown to authenticated users before they navigate to the Dashboard or Tools.
+Purely visual — no Python logic, no data. Three sections:
+  1. Hero banner (SENTINEL title with glowing cyan text)
+  2. Feature card listing what the app can do
+  3. Roadmap grid showing planned / free features with accent colors
+
+Why inline HTML/CSS instead of Streamlit components?
+  Streamlit's native widgets (st.title, st.columns, st.metric) look generic.
+  The HTML approach lets us match a cybersecurity aesthetic — dark background,
+  glowing cyan accents, animated pulse dots — that Streamlit can't produce
+  through its own layout primitives. unsafe_allow_html=True is required for this.
+"""
 import base64
 from pathlib import Path
 import streamlit as st
 
 _bg_path = Path(__file__).parent.parent / "assets" / "atlanta.jpg"
 try:
+    # Inline the image as base64 so it works when deployed to Streamlit Cloud,
+    # where we can't rely on a local file path being accessible from the browser.
     _bg_b64 = base64.b64encode(_bg_path.read_bytes()).decode()
 except Exception:
     _bg_b64 = ""
@@ -261,6 +278,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# One accent color per roadmap card — cycles across the grid so each card has
+# a distinct top-border color without repeating. Index aligns with IDEAS list.
 ACCENTS = ["#00d4ff", "#a855f7", "#4ade80", "#f97316", "#3b82f6",
            "#f59e0b", "#ef4444", "#06b6d4", "#8b5cf6", "#10b981"]
 

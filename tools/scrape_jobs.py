@@ -1,5 +1,19 @@
 """
-Scrape job listings from DailyRemote and export to Excel.
+scrape_jobs.py — DailyRemote job scraper (Firecrawl-powered CLI tool).
+
+Part of the WAT framework: this is a deterministic Tool layer script.
+Claude (the Agent layer) calls this with specific arguments; it does
+exactly one thing and returns a structured result (Excel file).
+
+Two-phase scrape:
+  Phase 1 — Listing page: extract job cards (title, URL, salary, tags, type).
+  Phase 2 — Detail page:  visit each job URL to get company, description, requirements.
+
+Why Firecrawl instead of requests + BeautifulSoup?
+  DailyRemote renders some content client-side via JavaScript, which plain
+  HTTP GET requests can't see. Firecrawl runs a real browser headlessly and
+  also offers structured JSON extraction via LLM — so instead of writing brittle
+  CSS selectors, we describe WHAT we want and the model extracts it.
 
 Usage:
     python tools/scrape_jobs.py --search "cybersecurity intern" --page 1
@@ -20,6 +34,10 @@ from openpyxl.utils import get_column_letter
 load_dotenv()
 
 
+# JSON Schema objects tell Firecrawl's LLM exactly what fields to extract
+# and what types to return. This is more reliable than CSS selectors because
+# the model understands semantics — "jobTitle" finds the title even if the
+# CSS class name changes, as long as it looks like a job title.
 LISTING_SCHEMA = {
     "type": "object",
     "properties": {
@@ -109,6 +127,10 @@ def scrape_job_detail(app: FirecrawlApp, job_url: str) -> dict:
 
 
 def build_row(listing: dict, detail: dict) -> list:
+    """Merge listing (card) data with detail (job page) data into one flat row.
+    The "others" tag is filtered out — DailyRemote uses it as a catch-all
+    category that adds noise without useful skill information.
+    """
     tags = listing.get("tags", [])
     tags_str = ", ".join(t for t in tags if t and t.lower() != "others") or "N/A"
     return [

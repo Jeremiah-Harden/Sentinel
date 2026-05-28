@@ -1,4 +1,21 @@
-"""Generate Deloitte-tailored resume → resumes/deloitte_resume.docx"""
+"""
+build_deloitte_resume.py — Generate a Deloitte-tailored resume as a .docx file.
+
+Why python-docx instead of a Word template?
+  A template requires editing the .docx binary manually and breaks whenever
+  you change the structure. Generating from code means the layout, fonts,
+  and content are all in one place and reproducible — re-run the script to
+  regenerate a perfectly formatted resume at any time.
+
+Why direct OOXML manipulation (OxmlElement, qn)?
+  python-docx's high-level API doesn't expose everything. Things like removing
+  table cell borders and adding paragraph border rules require dropping down to
+  the underlying Office Open XML (OOXML) format. This is verbose but precise —
+  we're setting the same XML attributes Word would write if you clicked
+  "Format → Borders and Shading" in the UI.
+
+Output: resumes/deloitte_resume.docx
+"""
 
 from pathlib import Path
 from docx import Document
@@ -11,7 +28,17 @@ from docx.oxml import OxmlElement
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def remove_cell_borders(cell):
-    tc = cell._tc
+    """Remove all borders from a table cell using raw OOXML.
+
+    python-docx doesn't expose cell border removal through its public API,
+    so we manipulate the underlying XML directly. The `qn()` helper converts
+    Python-friendly attribute names to the namespaced XML form Word expects
+    (e.g., 'w:val' → '{http://schemas.openxmlformats.org/...}val').
+
+    Used for the skills table and the two-column education/extracurricular table
+    so they look like normal content rather than bordered table cells.
+    """
+    tc   = cell._tc
     tcPr = tc.get_or_add_tcPr()
     tcBdr = OxmlElement('w:tcBdr')
     for side in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):

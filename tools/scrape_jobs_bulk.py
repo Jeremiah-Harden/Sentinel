@@ -1,5 +1,25 @@
 """
-Bulk-scrape multiple job searches from DailyRemote and export to Excel.
+scrape_jobs_bulk.py — Bulk DailyRemote scraper for multiple search terms.
+
+This is the CLI (command-line) version of scrape_jobs.py, designed to run as a
+long background job. Key differences from the single-search tool:
+  - Accepts multiple comma-separated search terms in one invocation
+  - Deduplicates across all terms — a job matching "cybersecurity intern" AND
+    "SOC analyst" is scraped once, not twice
+  - Stops paging a term early when a page returns only already-seen URLs
+    ("saturation" detection) — avoids wasting API credits on empty pages
+  - Adds a "Search Term" column so you can filter results by which term found them
+  - _scrape_with_retry() handles Firecrawl rate-limit errors with exponential
+    backoff (6s → 12s → 18s) before giving up on a single URL
+
+Why Firecrawl instead of requests?
+  DailyRemote renders content via JavaScript. Firecrawl runs a real browser and
+  lets us describe what we want in plain English via a JSON Schema — more
+  resilient than CSS selectors that break when the site redesigns.
+
+Part of the WAT framework: this script is the Tool layer. Claude (Agent layer)
+calls it with specific --searches and --max-pages arguments, reads the output
+Excel, and decides what to do next.
 
 Usage:
     python tools/scrape_jobs_bulk.py --searches "cybersecurity intern,software engineer intern" --max-pages 20
@@ -92,6 +112,14 @@ def progress_bar(current, total, width=40, label=""):
 
 
 def _scrape_with_retry(app, url, options, retries=3, backoff=6.0):
+    """Call Firecrawl with exponential backoff on failure.
+
+    Firecrawl's API can return rate-limit errors (429) or transient server
+    errors during heavy scraping sessions. Retrying with increasing delays
+    (6s, 12s, 18s) usually resolves these without manual intervention.
+    Returns an empty dict (not an exception) after all retries fail so the
+    caller can skip this URL and keep going rather than crashing the whole run.
+    """
     for attempt in range(1, retries + 1):
         try:
             result = app.v1.scrape_url(url, **options)
@@ -150,6 +178,14 @@ def scrape_job_detail(app, job_url):
 
 
 def build_row(listing, detail, search_term):
+    """Flatten listing + detail into one Excel row, tagging it with search_term.
+
+    The "Search Term" column is added here (absent in scrape_jobs.py) so the
+    resulting Excel can be filtered by which query found each job — useful when
+    comparing how many cybersecurity vs SWE positions show up for a given campaign.
+    The "others" DailyRemote tag is filtered the same way as in scrape_jobs.py —
+    it's a catch-all category with no signal value.
+    """
     tags = listing.get("tags", [])
     tags_str = ", ".join(t for t in tags if t and t.lower() != "others") or "N/A"
     return [

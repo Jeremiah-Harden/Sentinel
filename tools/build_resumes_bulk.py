@@ -1,12 +1,28 @@
 """
-Generate a tailored .docx resume for every job in tech_internships.xlsx.
+build_resumes_bulk.py — Generate one tailored .docx resume per job in the Excel.
 
 Output: resumes/{company_slug}_resume.docx  (or _2, _3 for duplicates)
 
-Tailoring logic (no API calls — keyword-based, runs fully offline):
-  - Classifies each job as cyber / swe / data / general
-  - Selects the matching summary variant
-  - Reorders projects so the most relevant one leads
+How tailoring works (keyword-scoring, runs fully offline — no API calls):
+  1. classify() counts how many cyber / swe / data keywords appear in the
+     job title + description + tags combined.
+  2. The category with the highest count wins. If all are zero → "general".
+  3. Each category maps to a different summary paragraph and a different
+     project order so the most relevant project always leads.
+
+Why keyword scoring instead of AI classification?
+  Speed and cost. We might generate 100+ resumes in one run. An LLM API call
+  per job would be slow and expensive. Keyword counting is deterministic,
+  instant, and accurate enough for the four broad categories we care about.
+
+Why a fresh Document() per resume instead of copying a template?
+  Templates require keeping a .docx binary in sync with the code. Generating
+  from code means the layout is fully version-controlled and reproducible —
+  re-run the script at any time to regenerate all resumes with updated content.
+
+Duplicate company handling:
+  Multiple jobs at the same company get _resume.docx, _resume_2.docx, etc.
+  so no file is silently overwritten.
 """
 
 import re
@@ -103,6 +119,10 @@ SKILLS = [
     ("C#",        "Wireshark and NMap",    "Security Monitoring"),
 ]
 
+# Keyword sets for classify(). Each set is checked against the combined
+# job title + description + tags text. The category whose keywords appear
+# most often wins. Sets are intentionally broad — a false positive to "swe"
+# is better than falling through to "general" and losing a tailored summary.
 CYBER_KW = {
     "security", "cyber", "threat", "incident", "soc", "vulnerability",
     "penetration", "malware", "forensic", "siem", "splunk", "nmap",
@@ -125,6 +145,13 @@ DATA_KW = {
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def classify(title, description, tags):
+    """Score a job against three keyword sets and return the winning category.
+
+    Ties between cyber and swe go to cyber — security tailoring is always
+    more specific and valuable for Jeremiah's profile. Data beats swe only
+    when it scores strictly higher. Cyber always wins a tie with data too.
+    Falls through to "general" when no keywords match at all.
+    """
     text = f"{title} {description} {tags}".lower()
     cy = sum(1 for kw in CYBER_KW if kw in text)
     sw = sum(1 for kw in SWE_KW if kw in text)
@@ -139,6 +166,12 @@ def classify(title, description, tags):
 
 
 def slugify(text):
+    """Convert a company name to a safe filename fragment.
+
+    Strips punctuation, collapses whitespace to underscores, and caps at 40
+    characters so filenames stay readable. The 40-char cap also avoids hitting
+    Windows MAX_PATH issues when the output directory has a long path.
+    """
     text = (text or "unknown").lower().strip()
     text = re.sub(r"[^\w\s-]", "", text)
     text = re.sub(r"[\s_-]+", "_", text)
@@ -386,7 +419,9 @@ def main():
     print(f"  Output: {output_dir}/")
     print("=" * 65)
 
-    # Copy to temp so the file can be read even if open in Excel
+    # Copy to a temp file before opening. On Windows, openpyxl can't open a
+    # .xlsx that Excel currently has locked. The copy bypasses the file lock
+    # so the script works even when the spreadsheet is open on your desktop.
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
         tmp_path = tmp.name
     shutil.copy2(excel_path, tmp_path)

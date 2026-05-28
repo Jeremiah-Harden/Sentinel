@@ -332,6 +332,13 @@ with tab3:
     SYMBOLS = "!@#$%^&*()-_=+[]{}|;:,.<>?"
 
     if st.button("Generate", type="primary", key="gen_btn"):
+        # Build the character pool from selected sets and guarantee at least
+        # one character from each. This prevents "all uppercase, no symbols" even
+        # if the random fill happens to skip a category — a real weakness in
+        # naive generators. Two-phase approach:
+        #   Phase 1: pick one guaranteed character from each selected set.
+        #   Phase 2: fill the rest randomly from the combined pool.
+        #   Phase 3: shuffle so the guaranteed chars aren't always at the front.
         pool = ""
         required = []
         if g_upper:  pool += string.ascii_uppercase;  required.append(secrets.choice(string.ascii_uppercase))
@@ -342,8 +349,11 @@ with tab3:
         if not pool:
             st.warning("Select at least one character set.")
         else:
-            padding = [secrets.choice(pool) for _ in range(g_len - len(required))]
+            padding  = [secrets.choice(pool) for _ in range(g_len - len(required))]
             combined = required + padding
+            # secrets.SystemRandom() uses os.urandom() — the OS's CSPRNG.
+            # This is critical: random.shuffle() uses a predictable seed and
+            # would produce a guessable sequence. Never use random for security.
             secrets.SystemRandom().shuffle(combined)
             st.session_state["gen_pw"] = "".join(combined)
 

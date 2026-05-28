@@ -1,6 +1,39 @@
 """
-Jerah's Job Scout — Click a board, pick your roles, get an Excel.
-Run: streamlit run app.py
+app.py — Jerah's Job Scout: browser-based job scraper with salary awareness.
+
+How it works (three steps the user sees):
+  Step 1 — Pick a job board (or paste a custom URL)
+  Step 2 — Toggle role search terms (cybersecurity, SWE, data, etc.)
+  Step 3 — Choose how many pages deep to scrape, then hit "Search Jobs"
+
+Under the hood — two scraping phases:
+  Phase 1 (listing pages): Collect all unique job cards across pages × terms.
+    Deduplicates by URL so the same posting doesn't appear twice even if
+    multiple search terms match it.
+  Phase 2 (detail pages): Visit each job's own page to extract company name,
+    full description, requirements, and the direct "Apply" link.
+    DailyRemote is skipped in phase 2 because its card already includes an
+    AI-generated summary — fetching the detail page would just repeat it.
+
+Why Playwright instead of requests + BeautifulSoup?
+  Most modern job boards (Wellfound, Dice, LinkedIn) render their listings
+  with JavaScript after the initial HTML loads. A plain HTTP GET misses all
+  of that content. Playwright launches a real headless Chromium browser that
+  executes the JS, so we see what a human would see.
+
+Why a DailyRemote-specific parser (_parse_dailyremote)?
+  DailyRemote has a stable, well-structured card format with CSS classes we
+  can target precisely. The generic parser (_parse_generic) works for any
+  board but is less accurate — it just follows links that look like job URLs.
+  Having a board-specific parser means better data quality for our main target.
+
+Salary color coding in Excel output:
+  Green  = salary clearly disclosed (contains $, £, €, or "per")
+  Yellow = vague text like "Competitive" or "Market rate"
+  Red    = not specified at all
+
+Run:
+    streamlit run app.py
 """
 
 import io
@@ -20,6 +53,8 @@ from playwright.sync_api import sync_playwright
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
+# Boards shown as clickable buttons in Step 1. The URL is the search entry point
+# — build_url() appends ?search= and &page= parameters to it.
 JOB_BOARDS = {
     "DailyRemote":  "https://dailyremote.com/",
     "Wellfound":    "https://wellfound.com/jobs",
@@ -42,6 +77,8 @@ QUICK_TERMS = [
     "Network Engineer",
 ]
 
+# Spoofing a real browser user-agent prevents sites from detecting and
+# blocking the headless Chromium instance with a bot-detection 403.
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -54,7 +91,9 @@ COLUMNS = [
 
 
 # ── CSS ────────────────────────────────────────────────────────────────────────
-# config.toml handles the base theme; this block handles things config.toml can't.
+# config.toml handles the base theme (background color, font). This CSS block
+# handles things config.toml can't reach: button hover states, progress bar
+# fill color (Streamlit hardcodes this), and custom scrollbar styling.
 
 CSS = """
 <style>
@@ -156,6 +195,12 @@ def salary_type(value: str) -> str:
 
 @contextmanager
 def browser_session():
+    """Open one shared headless browser for the whole scrape session.
+
+    Reusing one browser across all page fetches is much faster than launching
+    a new browser process per request. The context manager guarantees the
+    browser closes even if scraping throws an exception mid-run.
+    """
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         try:
@@ -165,6 +210,12 @@ def browser_session():
 
 
 def fetch_html(browser, url: str, wait_ms: int = 2500) -> tuple:
+    """Navigate to url and return (html_string, error_string|None).
+
+    wait_ms gives JS-rendered content time to appear after domcontentloaded.
+    Each call opens and closes its own tab so there's no state bleed between
+    pages (no shared cookies, no cached redirects).
+    """
     page = browser.new_page(user_agent=UA)
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -181,6 +232,14 @@ def _strip_emoji(text: str) -> str:
 
 
 def _parse_dailyremote(soup, page_url: str) -> list[dict]:
+    """Extract job cards from a DailyRemote listing page.
+
+    Uses CSS selectors specific to DailyRemote's card format (article.card,
+    div.company-name, span.card-tag). More reliable than the generic parser
+    because we know the exact HTML structure. The tag classification logic
+    (salary vs location vs skill) uses emoji and currency symbols as signals
+    since DailyRemote doesn't give these fields distinct CSS classes.
+    """
     jobs = []
     for card in soup.select("article.card"):
         link = card.select_one("h2.job-position a")
@@ -227,6 +286,16 @@ def _parse_dailyremote(soup, page_url: str) -> list[dict]:
 
 
 def _parse_generic(soup, page_url: str) -> list[dict]:
+    """Fallback parser for any job board without a custom extractor.
+
+    Finds all links whose href path looks like a job URL (contains /job, /jobs/,
+    /position, etc.) and treats the link text as the job title. This works
+    reasonably well across Wellfound, Dice, USAJobs, and others without needing
+    board-specific CSS knowledge. Results are less structured than _parse_dailyremote
+    — company, type, and date are all N/A since we don't know where to find them.
+    Caps at 25 results to avoid returning hundreds of nav links on boards with
+    deep link structures.
+    """
     job_path_hints = ["/job", "/jobs/", "/position", "/career", "/remote-job", "/listing", "/opening", "/vacancy"]
     seen, jobs = set(), []
     for a in soup.find_all("a", href=True):
@@ -310,6 +379,12 @@ def scrape_job_detail(browser, job_url: str, hostname: str) -> dict:
 
 
 def build_row(listing: dict, detail: dict) -> dict:
+    """Merge listing card data with detail page data into one flat dict.
+
+    The detail page's jobDescription takes priority over the card's AI summary
+    because it's the full text. If the detail scrape failed or returned N/A,
+    we fall back to whatever the card showed.
+    """
     tags_str = ", ".join(t for t in listing.get("tags", []) if t) or "N/A"
     desc = listing.get("description", "N/A")
     if detail.get("jobDescription") and detail["jobDescription"] != "N/A":
@@ -532,6 +607,8 @@ if run:
         st.error("Select a job board first (Step 1).")
         st.stop()
 
+    # Empty string search term means "all jobs" — some boards support this,
+    # others will just return a default page, which is acceptable.
     search_terms = all_terms or [""]
     seen_urls    = set()
     all_listings = []
@@ -568,6 +645,8 @@ if run:
                         seen_urls.add(job_url)
                         all_listings.append(listing)
                         added += 1
+                # If a page returns only listings we've already seen, we've
+                # hit the end of unique results — stop paging this term early.
                 if added == 0:
                     break
             p1_bar.progress((t_idx + 1) / total_terms)
@@ -610,7 +689,9 @@ if run:
             detail = scrape_job_detail(browser, job_url, target_host) if job_url else {}
             rows.append(build_row(listing, detail))
 
-            if i % 5 == 0 or i == total:
+            # Refresh the live preview table every 5 jobs so the user can see
+        # results accumulating without slowing down the scrape with every update.
+        if i % 5 == 0 or i == total:
                 df_live = pd.DataFrame(rows)[
                     ["Job Title", "Company", "Salary", "Location", "Job Type", "Date Posted", "Apply URL"]
                 ]

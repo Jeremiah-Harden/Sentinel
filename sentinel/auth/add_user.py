@@ -1,6 +1,14 @@
 """
-Run this script locally to add a new user to Sentinel.
-After running, commit and push config.yaml to apply on the live site.
+add_user.py — CLI script to add a new user to Sentinel's config.yaml.
+
+Run this locally (not on Streamlit Cloud) whenever you need to provision an
+account without going through the in-app registration flow. Useful for
+creating admin accounts or adding users before the app is live.
+
+After running:
+  - For git-backed users: commit and push config.yaml.
+  - For Gist-backed users: the in-app admin page can also add users directly
+    without needing this script.
 
 Usage:
     python sentinel/auth/add_user.py
@@ -26,6 +34,10 @@ email        = input("Email: ").strip()
 password     = getpass.getpass("Password: ")
 role         = input("Role [viewer/admin] (default: viewer): ").strip() or "viewer"
 
+# bcrypt with cost factor 12: slow enough to make brute-force expensive,
+# fast enough that a single legitimate login doesn't feel sluggish (~250ms).
+# gensalt() generates a fresh random salt each time so two identical passwords
+# produce different hashes — protects against rainbow table attacks.
 pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt(12)).decode()
 
 config["credentials"]["usernames"][username] = {
