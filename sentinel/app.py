@@ -1,14 +1,15 @@
 import base64
-import hmac
 import json
 import random
+import sys
 import time
-import uuid
 from pathlib import Path
 
 import bcrypt
 import streamlit as st
-import yaml
+
+sys.path.insert(0, str(Path(__file__).parent))
+from auth.store import load_config, save_config, make_session_cookie, read_session_cookie
 
 try:
     from streamlit_cookies_controller import CookieController
@@ -24,19 +25,10 @@ st.set_page_config(
 )
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-_CFG_PATH   = Path(__file__).parent / "auth" / "config.yaml"
-_SESS_PATH  = Path(__file__).parent / "auth" / "sessions.json"
-_TOKEN_PATH = Path(__file__).parent / "auth" / "tokens.json"
-_TOKEN_TTL  = 7 * 24 * 3600  # 7 days
+_SESS_PATH = Path(__file__).parent / "auth" / "sessions.json"
 
 
-# ── Config helpers ─────────────────────────────────────────────────────────────
-@st.cache_data(ttl=60)
-def _load_config():
-    with open(_CFG_PATH) as f:
-        return yaml.safe_load(f)
-
-
+# ── Auth helpers ───────────────────────────────────────────────────────────────
 def _check_password(username: str, password: str, config: dict) -> bool:
     user = config["credentials"]["usernames"].get(username.lower())
     if not user:
@@ -46,66 +38,6 @@ def _check_password(username: str, password: str, config: dict) -> bool:
 
 def _user_info(username: str, config: dict) -> dict:
     return config["credentials"]["usernames"].get(username.lower(), {})
-
-
-def _save_config(config: dict) -> None:
-    with open(_CFG_PATH, "w") as f:
-        yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
-    st.cache_data.clear()
-
-
-# ── Persistent session tokens ──────────────────────────────────────────────────
-def _load_tokens() -> dict:
-    try:
-        if _TOKEN_PATH.exists():
-            return json.loads(_TOKEN_PATH.read_text())
-    except Exception:
-        pass
-    return {}
-
-
-def _save_tokens(tokens: dict) -> None:
-    try:
-        _TOKEN_PATH.write_text(json.dumps(tokens))
-    except Exception:
-        pass
-
-
-def _create_token(username: str, display_name: str, role: str) -> str:
-    token = str(uuid.uuid4())
-    now   = time.time()
-    tokens = _load_tokens()
-    tokens = {k: v for k, v in tokens.items() if v.get("expires", 0) > now}
-    tokens[token] = {
-        "username":     username,
-        "display_name": display_name,
-        "role":         role,
-        "expires":      now + _TOKEN_TTL,
-    }
-    _save_tokens(tokens)
-    return token
-
-
-def _validate_token(token: str) -> dict | None:
-    if not token:
-        return None
-    tokens = _load_tokens()
-    entry  = tokens.get(str(token))
-    if not entry:
-        return None
-    if entry.get("expires", 0) < time.time():
-        tokens.pop(str(token), None)
-        _save_tokens(tokens)
-        return None
-    return entry
-
-
-def _revoke_token(token: str) -> None:
-    if not token:
-        return
-    tokens = _load_tokens()
-    tokens.pop(str(token), None)
-    _save_tokens(tokens)
 
 
 # ── Session ping (powers "Online Now" in admin) ────────────────────────────────
@@ -143,18 +75,17 @@ if _COOKIES_AVAILABLE:
     except Exception:
         pass
 
-# ── Restore session from persistent cookie on page refresh ─────────────────────
+# ── Restore session from cookie on page refresh / redeploy ────────────────────
 if not st.session_state.get("authenticated") and _ctrl is not None:
     try:
-        _saved_token = _ctrl.get("sentinel_session")
-        if _saved_token:
-            _session_data = _validate_token(_saved_token)
-            if _session_data:
-                st.session_state["authenticated"]  = True
-                st.session_state["username"]       = _session_data["username"]
-                st.session_state["display_name"]   = _session_data["display_name"]
-                st.session_state["role"]           = _session_data["role"]
-                st.session_state["session_token"]  = _saved_token
+        _saved = _ctrl.get("sentinel_session")
+        if _saved:
+            _data = read_session_cookie(_saved)
+            if _data:
+                st.session_state["authenticated"] = True
+                st.session_state["username"]      = _data["username"]
+                st.session_state["display_name"]  = _data["display_name"]
+                st.session_state["role"]          = _data["role"]
                 st.rerun()
     except Exception:
         pass
@@ -274,7 +205,7 @@ if not st.session_state.get("authenticated"):
     if "captcha_reg_a" not in st.session_state:
         _new_captcha("captcha_reg_")
 
-    config = _load_config()
+    config = load_config()
     tab_login, tab_register = st.tabs(["Log In", "Create Account"])
 
     # ── Log In ────────────────────────────────────────────────────────────────
@@ -304,19 +235,18 @@ if not st.session_state.get("authenticated"):
                 _new_captcha("captcha_")
                 st.error("Human verification failed — a new equation has been generated, try again.")
             elif _check_password(username_input, password_input, config):
-                info    = _user_info(username_input, config)
-                un      = username_input.strip().lower()
-                dname   = info.get("name", username_input)
-                role    = info.get("role", "viewer")
-                token   = _create_token(un, dname, role)
-                st.session_state["authenticated"]  = True
-                st.session_state["username"]       = un
-                st.session_state["display_name"]   = dname
-                st.session_state["role"]           = role
-                st.session_state["session_token"]  = token
+                info  = _user_info(username_input, config)
+                un    = username_input.strip().lower()
+                dname = info.get("name", username_input)
+                role  = info.get("role", "viewer")
+                cookie_val = make_session_cookie(un, dname, role)
+                st.session_state["authenticated"] = True
+                st.session_state["username"]      = un
+                st.session_state["display_name"]  = dname
+                st.session_state["role"]          = role
                 if _ctrl is not None:
                     try:
-                        _ctrl.set("sentinel_session", token)
+                        _ctrl.set("sentinel_session", cookie_val)
                     except Exception:
                         pass
                 st.rerun()
@@ -380,17 +310,16 @@ if not st.session_state.get("authenticated"):
                         "role":       "viewer",
                         "created_at": time.time(),
                     }
-                    _save_config(config)
-                    dname  = reg_display.strip()
-                    token  = _create_token(un, dname, "viewer")
-                    st.session_state["authenticated"]  = True
-                    st.session_state["username"]       = un
-                    st.session_state["display_name"]   = dname
-                    st.session_state["role"]           = "viewer"
-                    st.session_state["session_token"]  = token
+                    save_config(config)
+                    dname      = reg_display.strip()
+                    cookie_val = make_session_cookie(un, dname, "viewer")
+                    st.session_state["authenticated"] = True
+                    st.session_state["username"]      = un
+                    st.session_state["display_name"]  = dname
+                    st.session_state["role"]          = "viewer"
                     if _ctrl is not None:
                         try:
-                            _ctrl.set("sentinel_session", token)
+                            _ctrl.set("sentinel_session", cookie_val)
                         except Exception:
                             pass
                     st.rerun()
@@ -487,14 +416,13 @@ with st.sidebar:
     )
 
     if st.button("Log Out", use_container_width=True):
-        _revoke_token(st.session_state.get("session_token", ""))
         if _ctrl is not None:
             try:
                 _ctrl.remove("sentinel_session")
             except Exception:
                 pass
         for key in [
-            "authenticated", "username", "display_name", "role", "session_token",
+            "authenticated", "username", "display_name", "role",
             "captcha_a", "captcha_b", "captcha_reg_a", "captcha_reg_b",
             "admin_reauth_time",
         ]:

@@ -12,6 +12,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from tools.parse_logs import parse_log_text
 from tools.detect import run_all
+from auth.store import load_config as _gist_load, save_config as _gist_save
 
 _CFG      = Path(__file__).parent.parent / "auth" / "config.yaml"
 _SESS     = Path(__file__).parent.parent / "auth" / "sessions.json"
@@ -377,13 +378,15 @@ if st.session_state.get("role") != "admin":
 
 
 def _load():
-    with open(_CFG) as f:
-        return yaml.safe_load(f)
+    return _gist_load()
 
 
 def _save(cfg):
-    with open(_CFG, "w") as f:
-        yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+    _gist_save(cfg)
+    try:
+        st.cache_data.clear()
+    except Exception:
+        pass
 
 
 def _online_users() -> int:
